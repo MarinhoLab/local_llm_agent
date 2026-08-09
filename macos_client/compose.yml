@@ -9,7 +9,6 @@ services:
     build:
       context: .
       dockerfile: Dockerfile.tunnel
-    image: dgx-host-ssh-tunnel:latest
     container_name: dgx-vllm-tunnel
 
     environment:
@@ -71,7 +70,6 @@ services:
     build:
       context: .
       dockerfile: Dockerfile.aider
-    image: dgx-aider-tools:latest
     container_name: aider-dgx
 
     depends_on:
@@ -89,14 +87,16 @@ services:
 
     stdin_open: true
     tty: true
-    command: bash -lc 'echo "Aider container ready."; echo "Run: docker exec -it aider-dgx bash"; tail -f /dev/null'
+    command: >
+      bash -lc 'echo "Aider container ready.";
+      echo "Run: docker exec -it aider-dgx bash";
+      tail -f /dev/null'
     restart: unless-stopped
 
   endpoint-check:
     build:
       context: .
       dockerfile: Dockerfile.aider
-    image: dgx-aider-tools:latest
     container_name: dgx-endpoint-check
 
     depends_on:

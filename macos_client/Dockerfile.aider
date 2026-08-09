@@ -1,0 +1,27 @@
+# Dockerfile.aider
+# Client-side Aider/tools container for accessing the DGX Spark vLLM endpoint.
+
+FROM python:3.12-slim
+
+ENV DEBIAN_FRONTEND=noninteractive
+ENV PIP_NO_CACHE_DIR=1
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    bash \
+    ca-certificates \
+    curl \
+    git \
+    openssh-client \
+    jq \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN python -m pip install --upgrade pip \
+    && python -m pip install aider-chat
+
+WORKDIR /workspace
+
+ENV OPENAI_API_BASE=http://dgx-tunnel:8000/v1
+ENV OPENAI_API_KEY=local-dgx-key
+ENV AIDER_MODEL=openai/qwen-local
+
+CMD ["bash"]

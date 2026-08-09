@@ -1,0 +1,115 @@
+# compose_host.yml
+# Single-command macOS client-side stack:
+#   docker compose -f compose_host.yml up
+
+name: dgx-macos-agents
+
+services:
+  dgx-tunnel:
+    build:
+      context: .
+      dockerfile: Dockerfile.tunnel
+    image: dgx-host-ssh-tunnel:latest
+    container_name: dgx-vllm-tunnel
+
+    environment:
+      DGX_SSH_TARGET: ${DGX_SSH_TARGET:?Set DGX_SSH_TARGET in .env, e.g. user@192.168.1.50}
+      DGX_REMOTE_HOST: ${DGX_REMOTE_HOST:-localhost}
+      DGX_REMOTE_PORT: ${DGX_REMOTE_PORT:-8000}
+      LOCAL_TUNNEL_PORT: ${LOCAL_TUNNEL_PORT:-8000}
+      SSH_EXTRA_OPTS: ${SSH_EXTRA_OPTS:-}
+
+    volumes:
+      - ${SSH_DIR:-${HOME}/.ssh}:/root/.ssh:ro
+
+    ports:
+      - "127.0.0.1:${LOCAL_TUNNEL_PORT:-8000}:${LOCAL_TUNNEL_PORT:-8000}"
+
+    healthcheck:
+      test: ["CMD-SHELL", "nc -z localhost ${LOCAL_TUNNEL_PORT:-8000}"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+      start_period: 10s
+
+    restart: unless-stopped
+
+  openhands:
+    image: docker.openhands.dev/openhands/openhands:${OPENHANDS_TAG:-1.8}
+    container_name: openhands
+    pull_policy: always
+
+    depends_on:
+      dgx-tunnel:
+        condition: service_healthy
+
+    ports:
+      - "${OPENHANDS_PORT:-3000}:3000"
+
+    environment:
+      AGENT_SERVER_IMAGE_REPOSITORY: ${AGENT_SERVER_IMAGE_REPOSITORY:-ghcr.io/openhands/agent-server}
+      AGENT_SERVER_IMAGE_TAG: ${AGENT_SERVER_IMAGE_TAG:-1.26.0-python}
+      LOG_ALL_EVENTS: ${LOG_ALL_EVENTS:-true}
+      LLM_MODEL: ${LLM_MODEL:-openai/qwen-local}
+      LLM_BASE_URL: ${LLM_BASE_URL:-http://dgx-tunnel:8000/v1}
+      LLM_API_KEY: ${LLM_API_KEY:-local-dgx-key}
+      SANDBOX_VOLUME_MOUNTS: /workspace:/workspace
+
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - ${OPENHANDS_STATE:-./openhands-state}:/.openhands
+      - ${WORKSPACE_DIR:-./workspace}:/workspace
+
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+    stdin_open: true
+    tty: true
+    restart: unless-stopped
+
+  aider:
+    build:
+      context: .
+      dockerfile: Dockerfile.aider
+    image: dgx-aider-tools:latest
+    container_name: aider-dgx
+
+    depends_on:
+      dgx-tunnel:
+        condition: service_healthy
+
+    environment:
+      OPENAI_API_BASE: ${OPENAI_API_BASE:-http://dgx-tunnel:8000/v1}
+      OPENAI_API_KEY: ${LLM_API_KEY:-local-dgx-key}
+      AIDER_MODEL: ${AIDER_MODEL:-openai/qwen-local}
+
+    volumes:
+      - ${WORKSPACE_DIR:-./workspace}:/workspace
+      - ${GITCONFIG:-${HOME}/.gitconfig}:/root/.gitconfig:ro
+
+    stdin_open: true
+    tty: true
+    command: bash -lc 'echo "Aider container ready."; echo "Run: docker exec -it aider-dgx bash"; tail -f /dev/null'
+    restart: unless-stopped
+
+  endpoint-check:
+    build:
+      context: .
+      dockerfile: Dockerfile.aider
+    image: dgx-aider-tools:latest
+    container_name: dgx-endpoint-check
+
+    depends_on:
+      dgx-tunnel:
+        condition: service_healthy
+
+    environment:
+      LLM_API_KEY: ${LLM_API_KEY:-local-dgx-key}
+
+    command: >
+      bash -lc 'echo "Checking DGX vLLM endpoint...";
+      curl -fsS http://dgx-tunnel:8000/v1/models
+      -H "Authorization: Bearer ${LLM_API_KEY:-local-dgx-key}" &&
+      echo "\nDGX vLLM endpoint OK"'
+
+    restart: "no"

@@ -1,0 +1,18 @@
+# continue-config.yaml
+# Copy this to ~/.continue/config.yaml on macOS for the PyCharm Continue.dev plugin.
+# It uses the Docker-managed tunnel exposed on macOS localhost:8000.
+
+name: DGX Spark Local Qwen
+version: 0.0.1
+schema: v1
+
+models:
+  - name: DGX Qwen Local
+    provider: openai
+    model: qwen-local
+    apiBase: http://localhost:8000/v1
+    apiKey: local-dgx-key
+    roles:
+      - chat
+      - edit
+      - autocomplete

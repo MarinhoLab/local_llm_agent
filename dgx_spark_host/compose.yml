@@ -1,0 +1,45 @@
+# compose.yml
+# Start with: docker compose -f compose.yml up --build
+# Stop with:  docker compose -f compose.yml down
+
+services:
+  qwen-vllm:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: dgx-qwen-vllm:latest
+    container_name: dgx-qwen-vllm
+
+    # Requires NVIDIA Container Toolkit on the DGX Spark host.
+    gpus: all
+    ipc: host
+
+    ports:
+      # For safer use on a university network, change this to:
+      # "127.0.0.1:8000:8000" and access through ssh -L.
+      - "8000:8000"
+
+    volumes:
+      # Reuse downloaded Hugging Face model files between runs.
+      - ${HF_CACHE:-./hf-cache}:/root/.cache/huggingface
+
+    environment:
+      MODEL_NAME: ${MODEL_NAME:-Qwen/Qwen2.5-72B-Instruct}
+      SERVED_MODEL_NAME: ${SERVED_MODEL_NAME:-qwen-local}
+      API_KEY: ${API_KEY:-local-dgx-key}
+      MAX_MODEL_LEN: ${MAX_MODEL_LEN:-32768}
+      GPU_MEMORY_UTILIZATION: ${GPU_MEMORY_UTILIZATION:-0.85}
+      MAX_NUM_SEQS: ${MAX_NUM_SEQS:-1}
+      HOST: 0.0.0.0
+      PORT: 8000
+      HF_TOKEN: ${HF_TOKEN:-}
+      HF_HUB_ENABLE_HF_TRANSFER: "1"
+
+    restart: unless-stopped
+
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost:8000/v1/models -H 'Authorization: Bearer ${API_KEY:-local-dgx-key}' >/dev/null || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 20
+      start_period: 300s

@@ -1,0 +1,18 @@
+# Dockerfile.tunnel
+# SSH tunnel service for forwarding DGX Spark vLLM into the compose network.
+
+FROM debian:bookworm-slim
+
+ENV DEBIAN_FRONTEND=noninteractive
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    openssh-client \
+    netcat-openbsd \
+    ca-certificates \
+    bash \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY tunnel-entrypoint.sh /usr/local/bin/tunnel-entrypoint.sh
+RUN chmod +x /usr/local/bin/tunnel-entrypoint.sh
+
+ENTRYPOINT ["/usr/local/bin/tunnel-entrypoint.sh"]

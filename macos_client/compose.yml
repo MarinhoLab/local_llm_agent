@@ -1,6 +1,6 @@
-# compose_host.yml
+# compose.yml
 # Single-command macOS client-side stack:
-#   docker compose -f compose_host.yml up
+#   docker compose up
 
 name: dgx-macos-agents
 

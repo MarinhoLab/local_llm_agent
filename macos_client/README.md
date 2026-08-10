@@ -2,17 +2,21 @@
 
 Run this directory on macOS. It creates a tunnel to the DGX Spark vLLM server and starts OpenHands and Aider.
 
+## Prerequisites
+
+Before starting, establish an SSH tunnel to your DGX Spark host:
+
 ```bash
-ssh -L 8000:localhost:8000 b40617mm@spark-a074.local
+ssh -L 8000:localhost:8000 USER@DGX_SPARK_IP
 ```
 
 ## Quick start
 
 ```bash
-cp .env_host.example .env
+cp .env.example .env
 mkdir -p workspace openhands-state
 # edit .env and set DGX_SSH_TARGET=USER@DGX_SPARK_IP
-docker compose -f compose_host.yml up
+docker compose up
 ```
 
 Open OpenHands at:

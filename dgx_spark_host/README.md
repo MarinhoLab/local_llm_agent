@@ -6,7 +6,7 @@ Run this directory on the DGX Spark. It serves a Qwen model through vLLM's OpenA
 
 ```bash
 cp .env.example .env
-docker compose -f compose.yml up --build
+docker compose up --build
 ```
 
 The server listens on:

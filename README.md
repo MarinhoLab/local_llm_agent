@@ -9,7 +9,7 @@ Run on the DGX Spark. It hosts vLLM and Qwen.
 ```bash
 cd dgx_spark_host
 cp .env.example .env
-docker compose -f compose.yml up --build
+docker compose up --build
 ```
 
 ## `macos_client/`
@@ -18,8 +18,8 @@ Run on macOS. It starts the retired client, Aider, and an SSH tunnel to the DGX 
 
 ```bash
 cd macos_client
-cp .env_host.example .env
+cp .env.example .env
 mkdir -p workspace the retired client-state
 # edit .env and set DGX_SSH_TARGET=USER@DGX_SPARK_IP
-docker compose -f compose_host.yml up
+docker compose up
 ```

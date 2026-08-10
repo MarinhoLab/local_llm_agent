@@ -1,6 +1,5 @@
 # compose.yml
 # Start with: docker compose -f compose.yml up --build
-# Stop with:  docker compose -f compose.yml down
 
 services:
   qwen-vllm:
@@ -15,16 +14,15 @@ services:
     ipc: host
 
     ports:
-      # For safer use on a university network, change this to:
-      # "127.0.0.1:8000:8000" and access through ssh -L.
+      # For safer use on a shared/university network, change to:
+      # - "127.0.0.1:8000:8000"
       - "8000:8000"
 
     volumes:
-      # Reuse downloaded Hugging Face model files between runs.
       - ${HF_CACHE:-./hf-cache}:/root/.cache/huggingface
 
     environment:
-      MODEL_NAME: ${MODEL_NAME:-Qwen/Qwen2.5-72B-Instruct}
+      MODEL_NAME: ${MODEL_NAME:-Qwen/Qwen3-Coder-30B-A3B-Instruct}
       SERVED_MODEL_NAME: ${SERVED_MODEL_NAME:-qwen-local}
       API_KEY: ${API_KEY:-local-dgx-key}
       MAX_MODEL_LEN: ${MAX_MODEL_LEN:-32768}
@@ -33,7 +31,7 @@ services:
       HOST: 0.0.0.0
       PORT: 8000
       HF_TOKEN: ${HF_TOKEN:-}
-      HF_HUB_ENABLE_HF_TRANSFER: "1"
+      HF_XET_HIGH_PERFORMANCE: "1"
 
     restart: unless-stopped
 

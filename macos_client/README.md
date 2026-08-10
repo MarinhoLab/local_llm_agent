@@ -2,6 +2,10 @@
 
 Run this directory on macOS. It creates a tunnel to the DGX Spark vLLM server and starts OpenHands and Aider.
 
+```bash
+ssh -L 8000:localhost:8000 b40617mm@spark-a074.local
+```
+
 ## Quick start
 
 ```bash

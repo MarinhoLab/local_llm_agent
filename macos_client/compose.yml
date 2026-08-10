@@ -5,42 +5,10 @@
 name: dgx-macos-agents
 
 services:
-  dgx-tunnel:
-    build:
-      context: .
-      dockerfile: Dockerfile.tunnel
-    container_name: dgx-vllm-tunnel
-
-    environment:
-      DGX_SSH_TARGET: ${DGX_SSH_TARGET:?Set DGX_SSH_TARGET in .env, e.g. user@192.168.1.50}
-      DGX_REMOTE_HOST: ${DGX_REMOTE_HOST:-localhost}
-      DGX_REMOTE_PORT: ${DGX_REMOTE_PORT:-8000}
-      LOCAL_TUNNEL_PORT: ${LOCAL_TUNNEL_PORT:-8000}
-      SSH_EXTRA_OPTS: ${SSH_EXTRA_OPTS:-}
-
-    volumes:
-      - ${SSH_DIR:-${HOME}/.ssh}:/root/.ssh:ro
-
-    ports:
-      - "127.0.0.1:${LOCAL_TUNNEL_PORT:-8000}:${LOCAL_TUNNEL_PORT:-8000}"
-
-    healthcheck:
-      test: ["CMD-SHELL", "nc -z localhost ${LOCAL_TUNNEL_PORT:-8000}"]
-      interval: 10s
-      timeout: 5s
-      retries: 30
-      start_period: 10s
-
-    restart: unless-stopped
-
   openhands:
     image: docker.openhands.dev/openhands/openhands:${OPENHANDS_TAG:-1.8}
     container_name: openhands
     pull_policy: always
-
-    depends_on:
-      dgx-tunnel:
-        condition: service_healthy
 
     ports:
       - "${OPENHANDS_PORT:-3000}:3000"
@@ -72,10 +40,6 @@ services:
       dockerfile: Dockerfile.aider
     container_name: aider-dgx
 
-    depends_on:
-      dgx-tunnel:
-        condition: service_healthy
-
     environment:
       OPENAI_API_BASE: ${OPENAI_API_BASE:-http://dgx-tunnel:8000/v1}
       OPENAI_API_KEY: ${LLM_API_KEY:-local-dgx-key}
@@ -98,10 +62,6 @@ services:
       context: .
       dockerfile: Dockerfile.aider
     container_name: dgx-endpoint-check
-
-    depends_on:
-      dgx-tunnel:
-        condition: service_healthy
 
     environment:
       LLM_API_KEY: ${LLM_API_KEY:-local-dgx-key}

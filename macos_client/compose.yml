@@ -18,7 +18,7 @@ services:
       AGENT_SERVER_IMAGE_TAG: ${AGENT_SERVER_IMAGE_TAG:-1.26.0-python}
       LOG_ALL_EVENTS: ${LOG_ALL_EVENTS:-true}
       LLM_MODEL: ${LLM_MODEL:-openai/qwen-local}
-      LLM_BASE_URL: ${LLM_BASE_URL:-http://dgx-tunnel:8000/v1}
+      LLM_BASE_URL: ${LLM_BASE_URL:-http://host.docker.internal:8000/v1}
       LLM_API_KEY: ${LLM_API_KEY:-local-dgx-key}
       SANDBOX_VOLUME_MOUNTS: /workspace:/workspace
 
@@ -41,7 +41,7 @@ services:
     container_name: aider-dgx
 
     environment:
-      OPENAI_API_BASE: ${OPENAI_API_BASE:-http://dgx-tunnel:8000/v1}
+      OPENAI_API_BASE: ${OPENAI_API_BASE:-http://host.docker.internal:8000/v1}
       OPENAI_API_KEY: ${LLM_API_KEY:-local-dgx-key}
       AIDER_MODEL: ${AIDER_MODEL:-openai/qwen-local}
 
@@ -68,7 +68,7 @@ services:
 
     command: >
       bash -lc 'echo "Checking DGX vLLM endpoint...";
-      curl -fsS http://dgx-tunnel:8000/v1/models
+      curl -fsS http://host.docker.internal:8000/v1/models
       -H "Authorization: Bearer ${LLM_API_KEY:-local-dgx-key}" &&
       echo "\nDGX vLLM endpoint OK"'
 

@@ -20,7 +20,7 @@ RUN python -m pip install --upgrade pip \
 
 WORKDIR /workspace
 
-ENV OPENAI_API_BASE=http://dgx-tunnel:8000/v1
+ENV OPENAI_API_BASE=http://host.docker.internal:8000/v1
 ENV OPENAI_API_KEY=local-dgx-key
 ENV AIDER_MODEL=openai/qwen-local
 

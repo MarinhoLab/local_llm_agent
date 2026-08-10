@@ -29,7 +29,7 @@ If OpenHands asks for model settings:
 
 ```text
 Custom model: openai/qwen-local
-Base URL: http://dgx-tunnel:8000/v1
+Base URL: http://host.docker.internal:8000/v1
 API key: local-dgx-key
 ```
 

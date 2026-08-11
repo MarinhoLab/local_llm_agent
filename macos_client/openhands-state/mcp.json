@@ -1,7 +1,8 @@
 {
   "mcpServers": {
-    "websearch": {
-      "url": "http://searxng-mcp:8003/sse"
+    "ddg-search": {
+      "command": "uvx",
+      "args": ["duckduckgo-mcp-server"]
     }
   }
 }

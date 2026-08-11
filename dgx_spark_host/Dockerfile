@@ -6,7 +6,7 @@ FROM vllm/vllm-openai:latest
 ENV DEBIAN_FRONTEND=noninteractive
 
 # Defaults can be overridden in compose.yml or .env
-ENV MODEL_NAME=Qwen/Qwen3-Coder-30B-A3B-Instruct
+ENV MODEL_NAME=nvidia/Qwen3.6-27B-NVFP4
 ENV HOST=0.0.0.0
 ENV PORT=8000
 ENV API_KEY=local-dgx-key
@@ -14,8 +14,6 @@ ENV MAX_MODEL_LEN=32768
 ENV GPU_MEMORY_UTILIZATION=0.85
 ENV MAX_NUM_SEQS=1
 ENV SERVED_MODEL_NAME=qwen-local
-
-# Hugging Face cache and high-performance Xet transfers.
 ENV HF_HOME=/root/.cache/huggingface
 ENV TRANSFORMERS_CACHE=/root/.cache/huggingface
 ENV HF_XET_HIGH_PERFORMANCE=1

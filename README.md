@@ -1,25 +1,62 @@
-# DGX Spark Qwen Agent Setup
+# DGX the retired client + Qwen3.6
 
-This archive separates the setup into two parts.
-
-## `dgx_spark_host/`
-
-Run on the DGX Spark. It hosts vLLM and Qwen.
+## Server (DGX)
 
 ```bash
-cd dgx_spark_host
+cd dgx_the retired client_simple
 cp .env.example .env
-docker compose up --build
+docker compose build --no-cache
+docker compose up -d
+docker logs -f qwen-vllm
 ```
 
-## `macos_client/`
+the retired client will be available on:
 
-Run on macOS. It starts the retired client, Aider, and an SSH tunnel to the DGX Spark.
+```text
+http://<dgx-ip>:3000
+```
+
+## Client (macOS)
 
 ```bash
-cd macos_client
-cp .env.example .env
-mkdir -p workspace the retired client-state
-# edit .env and set DGX_SSH_TARGET=USER@DGX_SPARK_IP
-docker compose up
+ssh -L 3000:localhost:3000 <user>@<dgx-ip>
+```
+
+Then open:
+
+```text
+http://localhost:3000
+```
+
+in your browser.
+
+## Workspace
+
+Place repositories under:
+
+```text
+workspace/
+```
+
+Example:
+
+```bash
+cd workspace
+git clone <repository-url>
+```
+
+Inside the retired client:
+
+```text
+/workspace
+```
+
+## Useful Commands
+
+```bash
+docker logs -f the retired client
+docker logs -f qwen-vllm
+docker restart the retired client
+docker restart qwen-vllm
+docker compose down
 ```

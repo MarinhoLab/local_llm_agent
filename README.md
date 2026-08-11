@@ -1,25 +1,62 @@
-# DGX Spark Qwen Agent Setup
+# DGX OpenHands + Qwen3.6
 
-This archive separates the setup into two parts.
-
-## `dgx_spark_host/`
-
-Run on the DGX Spark. It hosts vLLM and Qwen.
+## Server (DGX)
 
 ```bash
-cd dgx_spark_host
+cd dgx_openhands_simple
 cp .env.example .env
-docker compose up --build
+docker compose build --no-cache
+docker compose up -d
+docker logs -f qwen-vllm
 ```
 
-## `macos_client/`
+OpenHands will be available on:
 
-Run on macOS. It starts OpenHands, Aider, and an SSH tunnel to the DGX Spark.
+```text
+http://<dgx-ip>:3000
+```
+
+## Client (macOS)
 
 ```bash
-cd macos_client
-cp .env.example .env
-mkdir -p workspace openhands-state
-# edit .env and set DGX_SSH_TARGET=USER@DGX_SPARK_IP
-docker compose up
+ssh -L 3000:localhost:3000 <user>@<dgx-ip>
+```
+
+Then open:
+
+```text
+http://localhost:3000
+```
+
+in your browser.
+
+## Workspace
+
+Place repositories under:
+
+```text
+workspace/
+```
+
+Example:
+
+```bash
+cd workspace
+git clone <repository-url>
+```
+
+Inside OpenHands:
+
+```text
+/workspace
+```
+
+## Useful Commands
+
+```bash
+docker logs -f openhands
+docker logs -f qwen-vllm
+docker restart openhands
+docker restart qwen-vllm
+docker compose down
 ```

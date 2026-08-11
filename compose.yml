@@ -1,4 +1,5 @@
 # compose.yml
+# DGX Spark host-side vLLM server.
 # Start with: docker compose -f compose.yml up --build
 
 services:
@@ -7,6 +8,7 @@ services:
       context: .
       dockerfile: Dockerfile
     image: dgx-qwen-vllm:latest
+    pull_policy: build
     container_name: dgx-qwen-vllm
 
     # Requires NVIDIA Container Toolkit on the DGX Spark host.
@@ -14,7 +16,7 @@ services:
     ipc: host
 
     ports:
-      # For safer use on a shared/university network, change to:
+      # For safer use with the macOS SSH tunnel, change this to:
       # - "127.0.0.1:8000:8000"
       - "8000:8000"
 

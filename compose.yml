@@ -37,15 +37,12 @@ services:
       - qwen-vllm
 
     ports:
-      - "127.0.0.1:3000:3000"
+      - "3000:3000"
     extra_hosts:
       - "host.docker.internal:host-gateway"
 
     environment:
-      LLM_MODEL: openai/qwen-local
-      LLM_BASE_URL: http://qwen-vllm:8000/v1
-      LLM_API_KEY: ${API_KEY}
-
+      APP_BASE_URL: ${APP_BASE_URL}
       AGENT_SERVER_IMAGE_REPOSITORY: ghcr.io/openhands/agent-server
       AGENT_SERVER_IMAGE_TAG: 1.26.0-python
 

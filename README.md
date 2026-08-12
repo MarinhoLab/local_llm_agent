@@ -51,6 +51,15 @@ Inside the retired client:
 /workspace
 ```
 
+## the retired client config
+
+```text
+Provider: OpenAI
+Model: qwen-local
+Base URL: http://qwen-vllm:8000/v1
+API Key: local-dgx-key
+```
+
 ## Useful Commands
 
 ```bash

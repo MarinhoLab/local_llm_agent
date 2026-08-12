@@ -2,12 +2,15 @@
 
 ## Server (DGX)
 
+Do once to configure
+
 ```bash
-cd dgx_the retired client_simple
 cp .env.example .env
 docker compose build --no-cache
-docker compose up -d
-docker logs -f qwen-vllm
+```
+
+```bash
+docker compose up
 ```
 
 the retired client will be available on:

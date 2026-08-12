@@ -6,7 +6,6 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-    image: dgx-qwen-vllm:latest
     container_name: dgx-qwen-vllm
 
     # Requires NVIDIA Container Toolkit on the DGX Spark host.

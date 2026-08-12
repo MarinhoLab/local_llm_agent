@@ -2,7 +2,7 @@ services:
 
   qwen-vllm:
     build:
-      context: dgx_openhands_simple
+      context: .
       dockerfile: Dockerfile.vllm
 
     image: dgx-qwen36:latest

@@ -22,15 +22,12 @@ http://<dgx-ip>:3000
 ## Client (macOS)
 
 ```bash
-ssh -L 3000:localhost:3000 <user>@<dgx-ip>
+ssh -L 3000:localhost:3000 <username>@<dgx-ip>
 ```
-
-Then open:
 
 ```text
 http://localhost:3000
 ```
-
 in your browser.
 
 ## Workspace

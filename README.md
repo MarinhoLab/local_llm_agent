@@ -51,7 +51,6 @@ This forwards the vLLM API (port 8000) from the DGX Spark to your local machine,
 
 ```bash
 cd macos_client
-cp .env.example .env
 mkdir -p workspace the retired client-state
 docker compose up
 ```
@@ -77,4 +76,4 @@ Open the retired client at `http://localhost:3000`. Configure the model as:
 | `WORKSPACE_DIR` | `./workspace` | Workspace mount path |
 | `RETIRED_STACK_STATE` | `./the retired client-state` | the retired client state directory |
 
-All defaults are in `.env.example`; override in `.env`.
+All defaults are listed in the table above; override in `.env`.

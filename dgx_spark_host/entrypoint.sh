@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-: "${MODEL_NAME:=Qwen/Qwen3-Coder-30B-A3B-Instruct}"
+: "${MODEL_NAME:=nvidia/Qwen3.6-27B-NVFP4}"
 : "${HOST:=0.0.0.0}"
 : "${PORT:=8000}"
 : "${API_KEY:=local-dgx-key}"
-: "${MAX_MODEL_LEN:=32768}"
+: "${MAX_MODEL_LEN:=65536}"
 : "${GPU_MEMORY_UTILIZATION:=0.85}"
 : "${MAX_NUM_SEQS:=1}"
 : "${SERVED_MODEL_NAME:=qwen-local}"

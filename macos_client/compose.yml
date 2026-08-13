@@ -6,26 +6,26 @@ name: dgx-macos-agents
 
 services:
   openhands:
-    image: docker.openhands.dev/openhands/openhands:${OPENHANDS_TAG:-1.8}
+    image: docker.openhands.dev/openhands/openhands:${OPENHANDS_TAG}
     container_name: openhands
     pull_policy: always
 
     ports:
-      - "${OPENHANDS_PORT:-3000}:3000"
+      - "${OPENHANDS_PORT}:3000"
 
     environment:
-      AGENT_SERVER_IMAGE_REPOSITORY: ${AGENT_SERVER_IMAGE_REPOSITORY:-ghcr.io/openhands/agent-server}
-      AGENT_SERVER_IMAGE_TAG: ${AGENT_SERVER_IMAGE_TAG:-1.26.0-python}
-      LOG_ALL_EVENTS: ${LOG_ALL_EVENTS:-true}
-      LLM_MODEL: ${LLM_MODEL:-openai/qwen-local}
-      LLM_BASE_URL: ${LLM_BASE_URL:-http://host.docker.internal:8000/v1}
-      LLM_API_KEY: ${LLM_API_KEY:-local-dgx-key}
+      AGENT_SERVER_IMAGE_REPOSITORY: ${AGENT_SERVER_IMAGE_REPOSITORY}
+      AGENT_SERVER_IMAGE_TAG: ${AGENT_SERVER_IMAGE_TAG}
+      LOG_ALL_EVENTS: ${LOG_ALL_EVENTS}
+      LLM_MODEL: ${LLM_MODEL}
+      LLM_BASE_URL: ${LLM_BASE_URL}
+      LLM_API_KEY: ${LLM_API_KEY}
       SANDBOX_VOLUME_MOUNTS: /workspace:/workspace
 
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
-      - ${OPENHANDS_STATE:-./openhands-state}:/.openhands
-      - ${WORKSPACE_DIR:-./workspace}:/workspace
+      - ${OPENHANDS_STATE}:/.openhands
+      - ${WORKSPACE_DIR}:/workspace
 
     extra_hosts:
       - "host.docker.internal:host-gateway"

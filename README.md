@@ -77,4 +77,4 @@ Open OpenHands at `http://localhost:3000`. Configure the model as:
 | `WORKSPACE_DIR` | `./workspace` | Workspace mount path |
 | `OPENHANDS_STATE` | `./openhands-state` | OpenHands state directory |
 
-Defaults are in `compose.yml` and `.env.example`; override in `.env`.
+All defaults are in `.env.example`; override in `.env`.

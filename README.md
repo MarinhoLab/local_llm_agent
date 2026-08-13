@@ -1,6 +1,6 @@
 # Local LLM Agent
 
-Run a Qwen model on a DGX Spark and connect to it from macOS using the retired client and Aider.
+Run a Qwen model on a DGX Spark and connect to it from macOS using the retired client.
 
 ## `dgx_spark_host/`
 
@@ -35,7 +35,7 @@ All vLLM defaults are set in `Dockerfile`; override via `.env` or `compose.yml`.
 
 ## `macos_client/`
 
-Run the retired client and Aider on macOS, connecting to the DGX Spark vLLM server.
+Run the retired client on macOS, connecting to the DGX Spark vLLM server.
 
 ### Run
 
@@ -73,8 +73,5 @@ Open the retired client at `http://localhost:3000`. Configure the model as:
 | `LOCAL_TUNNEL_PORT` | `8000` | Local port for SSH tunnel |
 | `SSH_DIR` | `${HOME}/.ssh` | SSH configuration directory |
 | `SSH_EXTRA_OPTS` | *(unset)* | Additional SSH options |
-| `AIDER_MODEL` | `openai/qwen-local` | Model used by Aider |
-| `OPENAI_API_BASE` | `http://host.docker.internal:8000/v1` | API base for Aider |
-| `GITCONFIG` | `${HOME}/.gitconfig` | Git config mount path |
 
 Defaults are in `compose.yml` and `.env.example`; override in `.env`.

@@ -51,7 +51,6 @@ This forwards the vLLM API (port 8000) from the DGX Spark to your local machine,
 
 ```bash
 cd macos_client
-cp .env.example .env
 mkdir -p workspace openhands-state
 docker compose up
 ```
@@ -77,4 +76,4 @@ Open OpenHands at `http://localhost:3000`. Configure the model as:
 | `WORKSPACE_DIR` | `./workspace` | Workspace mount path |
 | `OPENHANDS_STATE` | `./openhands-state` | OpenHands state directory |
 
-All defaults are in `.env.example`; override in `.env`.
+All defaults are listed in the table above; override in `.env`.

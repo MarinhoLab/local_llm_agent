@@ -77,4 +77,4 @@ Open the retired client at `http://localhost:3000`. Configure the model as:
 | `WORKSPACE_DIR` | `./workspace` | Workspace mount path |
 | `RETIRED_STACK_STATE` | `./the retired client-state` | the retired client state directory |
 
-Defaults are in `compose.yml` and `.env.example`; override in `.env`.
+All defaults are in `.env.example`; override in `.env`.

@@ -1,15 +1,6 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-: "${MODEL_NAME}"
-: "${HOST}"
-: "${PORT}"
-: "${API_KEY}"
-: "${MAX_MODEL_LEN}"
-: "${GPU_MEMORY_UTILIZATION}"
-: "${MAX_NUM_SEQS}"
-: "${SERVED_MODEL_NAME}"
-
 exec vllm serve "${MODEL_NAME}"   \
 --host "${HOST}" \
 --port "${PORT}" \

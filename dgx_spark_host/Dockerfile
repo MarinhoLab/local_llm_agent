@@ -1,7 +1,7 @@
 # Dockerfile
 # DGX Spark local LLM server using vLLM OpenAI-compatible API.
 
-FROM vllm/vllm-openai:latest
+FROM vllm/vllm-openai:v0.24.0-ubuntu2404
 
 ENV DEBIAN_FRONTEND=noninteractive
 
@@ -10,9 +10,10 @@ ENV MODEL_NAME=nvidia/Qwen3.6-27B-NVFP4
 ENV HOST=0.0.0.0
 ENV PORT=8000
 ENV API_KEY=local-dgx-key
-ENV MAX_MODEL_LEN=32768
-ENV GPU_MEMORY_UTILIZATION=0.85
-ENV MAX_NUM_SEQS=1
+ENV MAX_MODEL_LEN=262144
+ENV GPU_MEMORY_UTILIZATION=0.5
+ENV MAX_NUM_SEQS=8
+ENV MAX_NUM_BATCHED_TOKENS=8192
 ENV SERVED_MODEL_NAME=qwen-local
 ENV HF_HOME=/root/.cache/huggingface
 ENV TRANSFORMERS_CACHE=/root/.cache/huggingface

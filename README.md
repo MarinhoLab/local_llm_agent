@@ -37,13 +37,22 @@ All vLLM defaults are set in `Dockerfile`; override via `.env` or `compose.yml`.
 
 Run the retired client on macOS, connecting to the DGX Spark vLLM server.
 
+### SSH Tunnel
+
+Before starting the stack, create an SSH tunnel from macOS to the DGX Spark in a separate terminal:
+
+```bash
+ssh -L 8000:localhost:8000 USER@DGX_SPARK_IP
+```
+
+This forwards the vLLM API (port 8000) from the DGX Spark to your local machine, which the retired client will reach at `host.docker.internal:8000`.
+
 ### Run
 
 ```bash
 cd macos_client
 cp .env.example .env
 mkdir -p workspace the retired client-state
-# Edit .env: set DGX_SSH_TARGET=USER@DGX_SPARK_IP
 docker compose up
 ```
 
@@ -67,11 +76,5 @@ Open the retired client at `http://localhost:3000`. Configure the model as:
 | `LOG_ALL_EVENTS` | `true` | Log all the retired client events |
 | `WORKSPACE_DIR` | `./workspace` | Workspace mount path |
 | `RETIRED_STACK_STATE` | `./the retired client-state` | the retired client state directory |
-| `DGX_SSH_TARGET` | *(required)* | SSH target for DGX Spark (`user@host`) |
-| `DGX_REMOTE_HOST` | `localhost` | Remote host for SSH tunnel |
-| `DGX_REMOTE_PORT` | `8000` | Remote port for SSH tunnel |
-| `LOCAL_TUNNEL_PORT` | `8000` | Local port for SSH tunnel |
-| `SSH_DIR` | `${HOME}/.ssh` | SSH configuration directory |
-| `SSH_EXTRA_OPTS` | *(unset)* | Additional SSH options |
 
 Defaults are in `compose.yml` and `.env.example`; override in `.env`.

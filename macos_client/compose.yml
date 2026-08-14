@@ -20,7 +20,7 @@ services:
       LLM_MODEL: ${LLM_MODEL}
       LLM_BASE_URL: ${LLM_BASE_URL}
       LLM_API_KEY: ${LLM_API_KEY}
-      SANDBOX_VOLUME_MOUNTS: /workspace:/workspace
+      SANDBOX_VOLUMES: ${WORKSPACE_DIR}:/workspace:rw,/var/run/docker.sock:/var/run/docker.sock:rw
 
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock

@@ -38,14 +38,11 @@ services:
   duckduckgo-mcp:
     image: python:3.12-slim
     container_name: duckduckgo-mcp
-
     command: >
       bash -c "
       pip install --no-cache-dir duckduckgo-mcp-server &&
-      duckduckgo-mcp-server --transport sse
+      duckduckgo-mcp-server --transport sse --host 0.0.0.0 --allowed-hosts host.docker.internal:8001
       "
-
     ports:
       - "8001:8000"
-
     restart: unless-stopped

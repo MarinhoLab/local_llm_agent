@@ -81,4 +81,4 @@ All defaults are listed in the table above; override in `.env`.
 MCP
 
 Server Type: SSE
-URL: http://duckduckgo-mcp:8000/sse
+URL: http://host.docker.internal:8001/sse

@@ -1,8 +1,4 @@
 # compose.yml
-# Single-command macOS client-side stack:
-#   docker compose up
-
-name: dgx-macos-agents
 
 services:
   openhands:
@@ -17,9 +13,11 @@ services:
       AGENT_SERVER_IMAGE_REPOSITORY: ${AGENT_SERVER_IMAGE_REPOSITORY}
       AGENT_SERVER_IMAGE_TAG: ${AGENT_SERVER_IMAGE_TAG}
       LOG_ALL_EVENTS: ${LOG_ALL_EVENTS}
+
       LLM_MODEL: ${LLM_MODEL}
       LLM_BASE_URL: ${LLM_BASE_URL}
       LLM_API_KEY: ${LLM_API_KEY}
+
       SANDBOX_VOLUMES: ${WORKSPACE_DIR}:/workspace:rw,/var/run/docker.sock:/var/run/docker.sock:rw
 
     volumes:
@@ -30,7 +28,24 @@ services:
     extra_hosts:
       - "host.docker.internal:host-gateway"
 
+    depends_on:
+      - duckduckgo-mcp
+
     stdin_open: true
     tty: true
     restart: unless-stopped
 
+  duckduckgo-mcp:
+    image: python:3.12-slim
+    container_name: duckduckgo-mcp
+
+    command: >
+      bash -c "
+      pip install --no-cache-dir duckduckgo-mcp-server &&
+      duckduckgo-mcp-server --transport sse
+      "
+
+    ports:
+      - "8001:8000"
+
+    restart: unless-stopped

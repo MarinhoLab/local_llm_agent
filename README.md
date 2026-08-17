@@ -77,3 +77,8 @@ Open OpenHands at `http://localhost:3000`. Configure the model as:
 | `OPENHANDS_STATE` | `./openhands-state` | OpenHands state directory |
 
 All defaults are listed in the table above; override in `.env`.
+
+MCP
+
+Server Type: SSE
+URL: http://duckduckgo-mcp:8000/sse

@@ -12,6 +12,9 @@ services:
     gpus: all
     ipc: host
 
+    environment:
+      - PYTHONUNBUFFERED=1
+
     ports:
       - "8000:8000"
 

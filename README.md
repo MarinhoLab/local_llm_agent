@@ -77,3 +77,8 @@ Open the retired client at `http://localhost:3000`. Configure the model as:
 | `RETIRED_STACK_STATE` | `./the retired client-state` | the retired client state directory |
 
 All defaults are listed in the table above; override in `.env`.
+
+MCP
+
+Server Type: SSE
+URL: http://duckduckgo-mcp:8000/sse

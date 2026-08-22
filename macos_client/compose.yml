@@ -38,10 +38,16 @@ services:
   duckduckgo-mcp:
     image: python:3.12-slim
     container_name: duckduckgo-mcp
+    # DNS-rebinding allowlist for the SSE transport. The client is the
+    # OpenHands agent-server container (launched by the openhands app), which
+    # dials this service at http://host.docker.internal:8001/sse via the
+    # published host port; the localhost entries cover a non-Docker
+    # OpenHands running directly on the Mac.
     command: >
       bash -c "
       pip install --no-cache-dir duckduckgo-mcp-server &&
-      duckduckgo-mcp-server --transport sse --host 0.0.0.0 --allowed-hosts host.docker.internal:8001
+      duckduckgo-mcp-server --transport sse --host 0.0.0.0
+      --allowed-hosts host.docker.internal:* localhost:* 127.0.0.1:*
       "
     ports:
       - "8001:8000"

@@ -11,7 +11,23 @@ services:
 
     environment:
       LOG_ALL_EVENTS: ${LOG_ALL_EVENTS}
-      SANDBOX_TIMEOUT: "240"
+      # Sandbox startup (agent-server container) timeouts. Verified against the
+      # app-server source of docker.openhands.dev/openhands/openhands:latest
+      # (commit f4bfa7f9, 2026-07-21):
+      # - SANDBOX_STARTUP_GRACE_SECONDS: agent-server /health must answer within
+      #   this many seconds of container StartedAt or the sandbox is marked
+      #   ERROR ("Sandbox server not running"). Default is 15, too short for the
+      #   heavy agent-server image on a macOS Docker VM.
+      # - OH_APP_CONVERSATION_SANDBOX_STARTUP_TIMEOUT: outer polling window of
+      #   wait_for_sandbox_running(). Default is 120.
+      # Note: the legacy SANDBOX_TIMEOUT variable is NOT read by the V1
+      # app-server and has no effect.
+      SANDBOX_STARTUP_GRACE_SECONDS: "600"
+      OH_APP_CONVERSATION_SANDBOX_STARTUP_TIMEOUT: "600"
+      # Per-LLM-request HTTP timeout (seconds). All LLM_* vars are
+      # auto-forwarded into the agent-server container (AUTO_FORWARD_PREFIXES);
+      # SDK default is 300s, too low for Qwen3.8-27B NVFP4 over the SSH tunnel.
+      LLM_TIMEOUT: "1800"
       LLM_MODEL: ${LLM_MODEL}
       LLM_BASE_URL: ${LLM_BASE_URL}
       LLM_API_KEY: ${LLM_API_KEY}

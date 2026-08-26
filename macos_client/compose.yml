@@ -11,6 +11,7 @@ services:
 
     environment:
       LOG_ALL_EVENTS: ${LOG_ALL_EVENTS}
+      LOG_LEVEL: ${LOG_LEVEL}
       # Sandbox startup (agent-server container) timeouts. Verified against the
       # app-server source of docker.openhands.dev/openhands/openhands:latest
       # (commit f4bfa7f9, 2026-07-21):

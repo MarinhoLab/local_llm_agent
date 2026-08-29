@@ -1,19 +1,18 @@
 # Dockerfile
 # DGX Spark local LLM server using vLLM OpenAI-compatible API.
 
-FROM vllm/vllm-openai:v0.27.1-ubuntu2404
+FROM vllm/vllm-openai:latest
 
 ENV DEBIAN_FRONTEND=noninteractive
 
 # Defaults can be overridden in compose.yml or .env
-# Qwen3.8-27B is NVFP4 with a built-in MTP head (see entrypoint.sh).
-ENV MODEL_NAME=unsloth/Qwen3.8-27B-NVFP4
+ENV MODEL_NAME=Qwen/Qwen3.8-27B-FP8
 ENV HOST=0.0.0.0
 ENV PORT=8000
 ENV API_KEY=local-dgx-key
 ENV MAX_MODEL_LEN=262144
-ENV GPU_MEMORY_UTILIZATION=0.8
-ENV MAX_NUM_SEQS=4
+ENV GPU_MEMORY_UTILIZATION=0.85
+ENV MAX_NUM_SEQS=3
 ENV MAX_NUM_BATCHED_TOKENS=8192
 ENV SERVED_MODEL_NAME=qwen-local
 ENV HF_HOME=/root/.cache/huggingface

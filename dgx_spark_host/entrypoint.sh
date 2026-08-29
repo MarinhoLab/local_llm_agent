@@ -43,6 +43,5 @@ exec vllm serve "${MODEL_NAME}"   \
 --enable-auto-tool-choice \
 --tool-call-parser qwen3_coder \
 --reasoning-parser qwen3 \
---language-model-only \
 --api-key "${API_KEY}" \
 "${EXTRA_ARGS[@]}"

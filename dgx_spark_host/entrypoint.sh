@@ -28,6 +28,7 @@ exec vllm serve "${MODEL_NAME}"   \
 --host "${HOST}" \
 --port "${PORT}" \
 --dtype auto \
+--limit-mm-per-prompt '{"image":4}' \
 --served-model-name "${SERVED_MODEL_NAME}" \
 --max-model-len "${MAX_MODEL_LEN}" \
 --gpu-memory-utilization "${GPU_MEMORY_UTILIZATION}" \

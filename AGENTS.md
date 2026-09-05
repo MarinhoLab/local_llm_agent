@@ -59,6 +59,10 @@ Two self-contained stacks:
   openhands container, which dials http://host.docker.internal:8001/sse. The
   server's DNS-rebinding allowlist must accept host.docker.internal
   (localhost/127.0.0.1 cover a non-Docker OpenHands on the Mac).
+- **MCP search servers**: DuckDuckGo (local SSE) and Tavily (remote
+  streamable-http, API key) are both registered in OpenHands → Settings → MCP.
+  `.agents/skills/mcp-search-servers/SKILL.md` documents both and how to keep the
+  Tavily key out of git.
 
 ## Common commands
 

@@ -28,7 +28,7 @@ services:
       # Per-LLM-request HTTP timeout (seconds). All LLM_* vars are
       # auto-forwarded into the agent-server container (AUTO_FORWARD_PREFIXES);
       # SDK default is 300s, too low for Qwen3.8-27B NVFP4 over the SSH tunnel.
-      LLM_TIMEOUT: "1800"
+      LLM_TIMEOUT: "120"
       LLM_MODEL: ${LLM_MODEL}
       LLM_BASE_URL: ${LLM_BASE_URL}
       LLM_API_KEY: ${LLM_API_KEY}

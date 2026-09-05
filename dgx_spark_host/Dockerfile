@@ -1,7 +1,14 @@
 # Dockerfile
 # DGX Spark local LLM server using vLLM OpenAI-compatible API.
+#
+# vLLM v0.28.0 (2026-08-26) was the current `latest` tag when this was pinned.
+# Pin a specific version instead of `latest`: Qwen3.8 needs the qwen3_5
+# hybrid-attention support and Qwen MTP/fused-GDN fixes that landed in
+# v0.27/v0.28, and `latest` silently drifts on every rebuild. The -ubuntu2404
+# variant is multi-arch (arm64 for the GB10). Bump deliberately when a newer
+# vLLM release is tested.
 
-FROM vllm/vllm-openai:latest
+FROM vllm/vllm-openai:v0.28.0-ubuntu2404
 
 ENV DEBIAN_FRONTEND=noninteractive
 

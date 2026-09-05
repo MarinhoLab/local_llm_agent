@@ -4,8 +4,7 @@ Guidance for AI agents (and humans) working in this repository.
 
 ## Project overview
 
-`local_llm_agent` runs **Qwen3.8-27B (NVFP4)** on an **NVIDIA DGX Spark** (GB10, 128 GB
-unified memory, aarch64) via vLLM, and drives it from **macOS** through **OpenHands**
+`local_llm_agent` runs **Qwen3.8-27B (FP8, official `Qwen/Qwen3.8-27B-FP8`)** on an **NVIDIA DGX Spark** (GB10, 128 GB unified memory, aarch64) via vLLM, and drives it from **macOS** through **OpenHands**
 over an SSH tunnel.
 
 Two self-contained stacks:
@@ -18,28 +17,39 @@ Two self-contained stacks:
 
 ## Deployment constraints (do not change without a reason)
 
-- **Single user, at most 4 concurrent agents.** `MAX_NUM_SEQS=4` is deliberate: above
-  4 in-flight decodes the per-token memory-bandwidth tax on GB10 outweighs
-  continuous-batching gains.
-- **The DGX Spark runs the LLM only.** `GPU_MEMORY_UTILIZATION=0.8` relies on nothing
-  else sharing the unified memory pool. If the Spark gains other workloads, lower it.
+- **Single user, small concurrent-agent count.** `MAX_NUM_SEQS` is 8 in this
+  stack. Earlier GB10 measurements suggested the per-token memory-bandwidth
+  tax above ~4 in-flight decodes outweighed continuous-batching gains, but the
+  value was raised to 8 for multi-agent use; if multi-agent latency regresses,
+  drop it back toward 4 via `.env`.
+- **The DGX Spark runs the LLM only.** `GPU_MEMORY_UTILIZATION=0.85` relies on
+  nothing else sharing the unified memory pool. If the Spark gains other
+  workloads, lower it.
 - Quality over speed: agentic tool-calling quality (vLLM tool-eval ~90/100 for this
   model) is prioritized over raw tok/s.
 
 ## Key tuning decisions (why they exist)
 
-- **Model**: `unsloth/Qwen3.8-27B-NVFP4`. NVFP4, 23.4 GB, ships a built-in **MTP head**
-  (registered in `model.safetensors.index.json`), so speculative decoding needs only
-  `--speculative-config '{"method":"mtp","num_speculative_tokens":5}'` — no `model`
-  field, no separate download. MTP roughly doubles decode (~11 -> ~24 tok/s on GB10).
-  Earlier Unsloth revision had a tokenizer bug (prompts truncated at 2048 tokens);
-  the published revision fixed it — if you pin a snapshot, check
-  `tokenizer.json["truncation"] is None`.
-- **vLLM image**: `vllm/vllm-openai:v0.27.1-ubuntu2404` (multi-arch, pulls arm64 on
-  the Spark). Qwen3.8 needs a recent release (the `qwen3_5` hybrid-attention
-  architecture); v0.24.0 predates it.
-- **`--language-model-only`**: Qwen3.8 is a VLM; dropping the ~0.5 GB vision tower
-  buys KV cache. Remove the flag if image inputs are needed.
+- **Model**: `Qwen/Qwen3.8-27B-FP8` (official Qwen checkpoint, fine-grained
+  FP8 block-128, ~27 GB; the model card reports quality nearly identical to the
+  original). It ships a built-in **MTP head** (the model card lists
+  "MTP: trained with multiple steps", registered in
+  `model.safetensors.index.json`), so speculative decoding needs only
+  `--speculative-config '{"method":"mtp","num_speculative_tokens":5}'` — no
+  `model` field, no separate download. MTP roughly doubles decode on GB10.
+  (If you ever switch to `unsloth/Qwen3.8-27B-NVFP4` instead, check
+  `tokenizer.json["truncation"] is None`: an early unsloth repack baked in a
+  2048-token prompt truncation that the official Qwen repo does not have.)
+- **vLLM image**: `vllm/vllm-openai:v0.28.0-ubuntu2404` (pinned, multi-arch,
+  pulls arm64 on the Spark). Qwen3.8 needs a recent release (the `qwen3_5`
+  hybrid-attention architecture; v0.24.0 predates it), and v0.28.0 also carries
+  the Qwen MTP / fused GDN decode-kernel fixes. Pin a specific tag rather than
+  `latest` so rebuilds do not drift.
+- **Image inputs enabled**: Qwen3.8 is a native VLM (image + video). This stack
+  keeps the vision tower and passes
+  `--limit-mm-per-prompt '{"image":4}'`; there is no
+  `--language-model-only` flag. (That flag was used while experimenting with
+  the NVFP4 revision and was removed in favor of working image analysis.)
 - **`--kv-cache-dtype fp8`**: halves KV memory (~37 KB/token including the
   DeltaNet linear-attention state). The checkpoint ships `kv_cache_quant_algo: FP8`,
   so keep it — disabling it degrades outputs.
@@ -52,9 +62,17 @@ Two self-contained stacks:
   to 1,048,576 via YaRN (factor 4.0, must land in `text_config.rope_parameters` and
   include `mrope_*` fields or multimodal RoPE breaks). It is static and costs ~36 GiB
   of KV, so it stays off by default.
-- **OpenHands**: `AGENT_SERVER_IMAGE_TAG` must track the agent-server bundled in the
-  `docker.openhands.dev/openhands/openhands:1.8` image (1.42.1). Older pins cause
-  version-skew failures.
+- **OpenHands**: current images (v1.9+, latest v1.16.0 as of 2026-08-27)
+  bundle the agent-server into the app image at build time — there is no
+  separate agent-server image to pin and no `AGENT_SERVER_IMAGE_*` runtime
+  variable (older images did; that guidance is retired). `OPENHANDS_TAG=latest`
+  with `pull_policy: always` keeps the image current; pin a specific tag (e.g.
+  `1.16.0`) before a release if reproducibility matters.
+- **`LLM_TIMEOUT`**: set to 120s, hard-coded in `macos_client/compose.yml`
+  (forwarded to the agent-server containers via the `LLM_` prefix). This is
+  *below* the SDK default of 300s and was a deliberate trade (fast failure
+  feedback over the SSH tunnel); raise it via `.env` if long generations or
+  big-prompt prefills start timing out.
 - **DuckDuckGo MCP**: the SSE client is the OpenHands agent-server inside the
   openhands container, which dials http://host.docker.internal:8001/sse. The
   server's DNS-rebinding allowlist must accept host.docker.internal
@@ -88,8 +106,10 @@ python3 -c "import yaml; yaml.safe_load(open('macos_client/compose.yml'))"
 
 ## Repo layout & conventions
 
-- `.env` files (e.g. `dgx_spark_host/.env`) are local-only and hold secrets
-  (`HF_TOKEN`). `macos_client/example.env` is the template; copy it to `.env`.
+- `.env` files are local-only and hold secrets (`HF_TOKEN`) — they are
+  git-ignored. `dgx_spark_host/` reads `HF_CACHE`/`HF_TOKEN` from `.env` when
+  present (compose defaults work without it); `macos_client/example.env` is the
+  template, copy it to `.env`.
 - `context/` holds exported OpenHands conversation events and is git-ignored —
   never commit it.
 - All runtime defaults live as `ENV` in `dgx_spark_host/Dockerfile`;

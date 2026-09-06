@@ -68,11 +68,20 @@ Two self-contained stacks:
   variable (older images did; that guidance is retired). `OPENHANDS_TAG=latest`
   with `pull_policy: always` keeps the image current; pin a specific tag (e.g.
   `1.16.0`) before a release if reproducibility matters.
-- **`LLM_TIMEOUT`**: set to 120s, hard-coded in `macos_client/compose.yml`
-  (forwarded to the agent-server containers via the `LLM_` prefix). This is
-  *below* the SDK default of 300s and was a deliberate trade (fast failure
-  feedback over the SSH tunnel); raise it via `.env` if long generations or
-  big-prompt prefills start timing out.
+- **LLM configuration (model, base URL, API key)**: the V1 web app does **not**
+  read `LLM_MODEL` / `LLM_BASE_URL` / `LLM_API_KEY` container env vars. It
+  resolves the LLM from the GUI profile store (`Settings → LLM`), persisted in
+  the state volume (`OPENHANDS_STATE`). Those env vars are only honored by the
+  V0/CLI path (`LLM.load_from_env` + `--override-with-envs`). Setting them in
+  `compose.yml` does nothing and the onboarding prompt still asks for the model.
+  Set it once in the UI. The agent-server config loader only parses `OH_*`
+  prefixed vars (see `agent_server/config.py` `ENVIRONMENT_VARIABLE_PREFIX`).
+- **`LLM_TIMEOUT`**: was set to 120s in `macos_client/compose.yml`, but this is
+  a **no-op** in the V1 web app. The per-LLM-request timeout is the SDK default
+  (300s) attached to the LLM object from the profile; the agent-server does not
+  read any `LLM_*` env var, and the `AUTO_FORWARD_PREFIXES` mechanism that
+  previously pushed `LLM_*` into the agent-server no longer exists in the SDK.
+  Removed from `compose.yml`.
 - **DuckDuckGo MCP**: the SSE client is the OpenHands agent-server inside the
   openhands container, which dials http://host.docker.internal:8001/sse. The
   server's DNS-rebinding allowlist must accept host.docker.internal

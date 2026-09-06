@@ -106,13 +106,12 @@ docker exec -it openhands bash
 
 ## `.env` and secrets (do not leak)
 
-- Tracked `.env` files carry **empty** secret values by convention
-  (`dgx_spark_host/.env` ships with `HF_TOKEN=` blank; `macos_client/example.env`
-  is the template). Copy `example.env` to a local, git-ignored `.env` and fill
-  the real values there.
-- `LLM_API_KEY` in `macos_client/example.env` is a local placeholder
-  (`local-dgx-key`) — vLLM does not authenticate, so it is not a real secret,
-  but never commit a real one.
+- `.env` files are local-only and git-ignored. `macos_client/example.env` is the
+  tracked template — copy it to a local `.env` and fill the real values there.
+  (The tracked template keeps only non-secret defaults; the LLM is now
+  configured in the OpenHands GUI, not in `.env` — see README.)
+- The vLLM API key (`local-dgx-key`) is a local placeholder — vLLM does not
+  authenticate, so it is not a real secret, but never commit a real one.
 - If a token is ever committed, rotate it at the provider and purge it from git
   history (`git filter-repo`).
 

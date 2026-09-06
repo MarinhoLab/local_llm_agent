@@ -25,15 +25,19 @@ services:
       # app-server and has no effect.
       SANDBOX_STARTUP_GRACE_SECONDS: "600"
       OH_APP_CONVERSATION_SANDBOX_STARTUP_TIMEOUT: "600"
-      # Per-LLM-request HTTP timeout (seconds). All LLM_* vars are
-      # auto-forwarded into the agent-server container (AUTO_FORWARD_PREFIXES).
-      # Deliberately set *below* the SDK default (300s): at ~24 tok/s a
-      # hung/slow request fails fast after ~2.9k tokens instead of 9k.
-      # Raise it if long generations or big-prompt prefills time out.
-      LLM_TIMEOUT: "120"
-      LLM_MODEL: ${LLM_MODEL}
-      LLM_BASE_URL: ${LLM_BASE_URL}
-      LLM_API_KEY: ${LLM_API_KEY}
+      # NOTE: the LLM is NOT configured here. The V1 web app reads the LLM
+      # from its own profile store (GUI: Settings -> LLM), which persists in
+      # the state volume. The legacy LLM_MODEL / LLM_BASE_URL / LLM_API_KEY
+      # container env vars are only honored by the V0/CLI path
+      # (LLM.load_from_env + --override-with-envs) and are ignored by the web
+      # app — so setting them does nothing and the onboarding prompt still
+      # asks. Set the model once in the UI (see README: "Configure the model").
+      #
+      # Per-LLM-request HTTP timeout: the V1 web app uses the SDK default
+      # (300s), set on the LLM object from the profile — there is no env knob
+      # for it. (A previous LLM_TIMEOUT=120 here was a no-op: the AUTO_FORWARD
+      # mechanism the old comment cited no longer exists in the SDK, and the
+      # agent-server does not read any LLM_* env vars.)
 
       SANDBOX_VOLUMES: ${WORKSPACE_DIR}:/workspace:rw,/var/run/docker.sock:/var/run/docker.sock:rw
 

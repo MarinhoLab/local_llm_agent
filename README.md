@@ -1,6 +1,7 @@
 # Local LLM Agent
 
-Run a Qwen model on a DGX Spark and connect to it from macOS using OpenHands.
+Run a Qwen model on a DGX Spark and connect to it from macOS using OpenHands
+(and Agent Canvas).
 
 ## `dgx_spark_host/`
 
@@ -154,3 +155,61 @@ in `.env` and the bootstrap adds the `streamable-http` server at `TAVILY_URL`.
 Leave the key blank to keep Tavily off. Keep the real key in the git-ignored
 `.env` only — never commit it. Details in
 `.agents/skills/mcp-search-servers/SKILL.md`.
+
+## `agent_canvas/`
+
+Run [Agent Canvas](https://docs.openhands.dev/openhands/usage/agent-canvas/setup) —
+the OpenHands client plus agent-server, automation server, and ingress — as a
+single Docker container on macOS, pointed at the local Qwen model.
+
+### Run
+
+```bash
+cd agent_canvas
+mkdir -p openhands-state projects
+docker compose up -d
+```
+
+The Canvas UI is at `http://localhost:8010/canvas`. The agent-server API is on
+the same ingress (e.g. `http://localhost:8010/api/conversations`), protected by
+a session API key the launcher auto-generates and persists in
+`openhands-state/agent-canvas/api-key.txt`.
+
+The Spark's vLLM is reachable from inside the container at
+`http://host.docker.internal:8000/v1` (through the SSH tunnel), so configure
+Settings → LLM in the UI with base URL `http://host.docker.internal:8000/v1`,
+model `qwen-local`, key `local-dgx-key`. Or register it as a profile via the
+API:
+
+```bash
+KEY=$(tr -d '\n' < openhands-state/agent-canvas/api-key.txt)
+curl -sS -X POST -H "X-Session-API-Key: $KEY" -H "Content-Type: application/json" \
+  -d '{"llm": {"model": "openai/qwen-local", "api_key": "local-dgx-key",
+               "base_url": "http://host.docker.internal:8000/v1"}}' \
+  http://localhost:8010/api/profiles/qwen-local
+curl -sS -X POST -H "X-Session-API-Key: $KEY" \
+  http://localhost:8010/api/profiles/qwen-local/activate
+```
+
+### Environment Variables
+
+| Variable | Default | Description |
+|---|---|---|
+| `AGENT_CANVAS_PORT` | `8010` | Host port for the Canvas ingress (avoids 8000 vLLM tunnel, 8001 MCP, 3000 OpenHands UI) |
+| `AGENT_CANVAS_TAG` | `latest` | `ghcr.io/openhands/agent-canvas` image tag; pin for reproducibility |
+| `AGENT_CANVAS_STATE` | `./openhands-state` | Host dir mounted at `/home/openhands/.openhands` (settings, LLM profile, API key, conversations) |
+| `PROJECTS_DIR` | `./projects` | Host dir mounted at `/projects` — the project files canvas agents may work in |
+| `LOCAL_BACKEND_API_KEY` | *(auto-generated)* | API key for the agent-server API; auto-persisted, required only in `--public` mode |
+| `OH_SECRET_KEY` | *(auto-generated)* | Secret protecting stored settings and secrets |
+| `OH_AGENT_SERVER_VERSION` | *(unset)* | Pin a specific agent-server version |
+
+Canvas agents are untrusted; the container is the sandbox boundary, so the
+service deliberately gets no `docker.sock` and no GPUs.
+
+### Sandbox note
+
+When driving this stack from the OpenHands sandbox (not the Mac terminal), the
+sandbox filesystem is not a path the Mac's Docker daemon can bind. Use
+`agent_canvas/sync_to_mac.sh` to copy the tracked files into the Mac checkout
+(`/Users/user/git/local_llm_agent`) first; `.env` there uses Mac-absolute bind
+paths so `sudo docker compose up -d` works from either side.

@@ -72,36 +72,50 @@ This forwards the vLLM API (port 8000) from the DGX Spark to your local machine,
 
 ```bash
 cd macos_client
-cp example.env .env        # required: compose.yml reads LLM_* / ports from it
+cp example.env .env        # required: compose.yml reads ports / logging from it
 mkdir -p workspace the retired client-state
 docker compose up
 ```
 
-Open the retired client at `http://localhost:3000`. Configure the model as:
+Open the retired client at `http://localhost:3000`. On first launch it prompts for an
+LLM — configure it once in the **Settings → LLM** page (Advanced → Custom
+model):
 
 - **Custom model:** `openai/qwen-local`
 - **Base URL:** `http://host.docker.internal:8000/v1`
 - **API key:** `local-dgx-key`
 
+This is the *only* way to set the model: the V1 web app reads the LLM from its
+profile store (persisted in `RETIRED_STACK_STATE`), not from `LLM_*` env vars. Once
+saved, the setting survives restarts.
+
 ### Environment Variables
+
+The LLM is configured in the GUI (above), **not** via env vars. The remaining
+vars control ports, logging, and mounts:
 
 | Variable | Default | Description |
 |---|---|---|
 | `RETIRED_STACK_TAG` | `latest` | the retired client image tag (bumped to `1.16.0` as of 2026-08; the image bundles its retired-server, so there is no separate retired-server image to pin) |
 | `RETIRED_STACK_PORT` | `3000` | Host port for the the retired client UI |
-| `LLM_MODEL` | `openai/qwen-local` | LLM model identifier |
-| `LLM_BASE_URL` | `http://host.docker.internal:8000/v1` | LLM API endpoint |
-| `LLM_API_KEY` | `local-dgx-key` | LLM API key |
-| `LLM_TIMEOUT` | `120` (hard-coded in `compose.yml`) | Per-LLM-request HTTP timeout, seconds; forwarded to the retired-server containers via the `LLM_` prefix |
 | `LOG_ALL_EVENTS` | `false` | Log all the retired client events |
 | `LOG_LEVEL` | `INFO` | the retired client log level |
 | `WORKSPACE_DIR` | `./workspace` | Workspace mount path |
-| `RETIRED_STACK_STATE` | `./the retired client-state` | the retired client state directory |
+| `RETIRED_STACK_STATE` | `./the retired client-state` | the retired client state directory (holds the persisted LLM profile) |
 
 Sandbox (retired-server container) startup timeouts are also hard-coded in
 `compose.yml`: `SANDBOX_STARTUP_GRACE_SECONDS=600` and
 `OH_APP_CONVERSATION_SANDBOX_STARTUP_TIMEOUT=600` (the retired client defaults are 15
 and 120 — too short for the retired-server image on a macOS Docker VM).
+
+> **Note on `LLM_MODEL` / `LLM_BASE_URL` / `LLM_API_KEY` / `LLM_TIMEOUT`:**
+> these container env vars were historically documented here, but in the
+> current V1 web app they are ignored. They are only consumed by the V0/CLI
+> path (`LLM.load_from_env` + `--override-with-envs`); the web app and its
+> retired-server read the LLM solely from the GUI profile store, and the
+> `AUTO_FORWARD_PREFIXES` mechanism that used to push `LLM_*` into the
+> retired-server no longer exists in the SDK. If you see them in an older
+> `compose.yml`, they are inert.
 
 All defaults are listed in the table above; override in `.env`.
 

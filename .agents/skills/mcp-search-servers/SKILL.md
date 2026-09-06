@@ -23,9 +23,13 @@ Protocol (MCP) servers for web search. Use this skill to add either server to
 the retired client, understand the tools it exposes, and keep the Tavily API key out of
 version control.
 
-Both servers are registered through **the retired client → Settings → MCP** (or the
-`/api/settings/mcp/<name>` REST API). They are independent: you can enable
-either, both, or neither.
+Both servers are registered in the the retired client **settings store**. In this stack
+the `oh-bootstrap` sidecar (`macos_client/oh_bootstrap.py`) does it
+automatically on each `docker compose up` from the `DUCKDUCKGO_MCP_URL` /
+`TAVILY_URL` / `TAVILY_API_KEY` values in `.env`. Manual registration —
+**the retired client → Settings → MCP** or the REST API below — remains the fallback and
+the way to add *other* servers. The two are independent: you can enable either,
+both, or neither.
 
 ## 1. DuckDuckGo search (local, no API key)
 
@@ -116,26 +120,42 @@ Guidance:
 
 ## Adding a server in the retired client (headless / scripted)
 
-`the retired client → Settings → MCP` is the normal path. The equivalent REST calls,
+`the retired client → Settings → MCP` is the normal path. The equivalent REST path
 against the the retired client backend (e.g. `http://host.docker.internal:3000` from the
-sandbox, `http://localhost:3000` on the Mac), are:
+sandbox, `http://localhost:3000` on the Mac) writes `agent_settings.mcp_config`
+via a **partial settings patch**. There is **no** per-server
+`/api/settings/mcp/<name>` route in the current V1 web app — that path 404s to
+the SPA HTML fallback. (An older retired-server exposed `POST /api/mcp/test` to
+probe a server without persisting; the current app-server does not.)
+
+To add a server you must send the **full desired `mcp_config`** — `mcp_config`
+is applied *wholesale*, so read the current one first and merge:
 
 ```bash
-# DuckDuckGo (SSE, keyless)
-curl -sS -X POST http://host.docker.internal:3000/api/settings/mcp/duckduckgo \
-  -H 'Content-Type: application/json' \
-  -d '{"transport":"sse","url":"http://host.docker.internal:8001/sse"}'
+BASE=http://host.docker.internal:3000
 
-# Tavily (streamable-http, Bearer auth). Replace $TAVILY_API_KEY with the real
-# key from your local .env — never hard-code it in a script or commit it.
-curl -sS -X POST http://host.docker.internal:3000/api/settings/mcp/tavily \
-  -H 'Content-Type: application/json' \
-  -d "{\"transport\":\"streamable-http\",\"url\":\"https://mcp.tavily.com/mcp\",\"headers\":{\"Authorization\":\"Bearer $TAVILY_API_KEY\"}}"
+# 1. Read current mcp_config (404 on a fresh install = none yet).
+CUR=$(curl -sS $BASE/api/v1/settings | \
+  python3 -c "import json,sys; print(json.dumps(json.load(sys.stdin).get('agent_settings',{}).get('mcp_config',{}) or {}))")
+
+# 2. Merge in the new server(s) and POST the whole map.
+NEW=$(python3 -c "
+import json
+cur=$CUR
+cur['duckduckgo']={'transport':'sse','url':'http://host.docker.internal:8001/sse'}
+cur['tavily']={'transport':'streamable-http','url':'https://mcp.tavily.com/mcp',
+               'auth':{'strategy':'bearer','value':'$TAVILY_API_KEY'}}
+print(json.dumps(cur))")
+
+curl -sS -X POST $BASE/api/v1/settings -H 'Content-Type: application/json' \
+  -d "$(python3 -c "import json; print(json.dumps({'agent_settings_diff':{'mcp_config':$NEW}}))")"
 ```
 
-Validate a candidate without persisting it via `POST /api/mcp/test` (an
-the retired client retired-server endpoint); it connects and lists tools without saving
-settings.
+DuckDuckGo is keyless (SSE); Tavily uses `auth: {strategy: bearer, value:
+<key>}`. Replace `$TAVILY_API_KEY` with the real key from your local `.env` —
+never hard-code or commit it. (The `oh-bootstrap` sidecar does exactly this
+merge, idempotently, on each start — see `macos_client/oh_bootstrap.py` and
+`MEMORIES.md`.)
 
 ## Keeping the Tavily key out of the repository
 
@@ -145,11 +165,11 @@ with `HF_TOKEN=` blank). Follow the same rule for Tavily:
 
 - `macos_client/example.env` carries a blank `TAVILY_API_KEY=` placeholder as the
   template. Copy it to `macos_client/.env` (git-ignored) and fill in the real key
-  there. That file is only a convenient, git-ignored **stash** for the key — the
-  container does not read it. The key's real destination is the retired client' MCP
-  settings (persisted in `the retired client-state/`), entered when you add the server.
+  there. The `oh-bootstrap` sidecar reads it from `.env` (via compose
+  interpolation) and registers the Tavily server in the retired client on each start —
+  it is never read from the container environment directly by the the retired client app
+  itself, and the value persists in `the retired client-state/` once written.
 - Never paste the key into `compose.yml`, a commit message, this skill, a PR
   description, or any committed file. If a key is ever committed by accident,
   rotate it at the Tavily dashboard and purge it from git history.
-- When passing the key to the retired client, do it via the environment/header as above,
-  not inlined in the command text that gets logged.
+- The bootstrap logs only that Tavily is "configured" — never the key value.

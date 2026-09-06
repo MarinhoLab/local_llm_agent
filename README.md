@@ -77,21 +77,27 @@ mkdir -p workspace openhands-state
 docker compose up
 ```
 
-Open OpenHands at `http://localhost:3000`. On first launch it prompts for an
-LLM — configure it once in the **Settings → LLM** page (Advanced → Custom
-model):
+Open OpenHands at `http://localhost:3000`. The LLM is **pre-configured from
+`.env`**: a small `oh-bootstrap` sidecar (see `oh_bootstrap.py`) copies
+`LLM_MODEL` / `LLM_BASE_URL` / `LLM_API_KEY` into the OpenHands settings store
+on every start, plus the DuckDuckGo MCP server and — if `TAVILY_API_KEY` is set
+— the Tavily MCP server. It is idempotent (a no-op once configured) and the
+`.env` file is the source of truth for the model and base URL.
 
-- **Custom model:** `openai/qwen-local`
-- **Base URL:** `http://host.docker.internal:8000/v1`
-- **API key:** `local-dgx-key`
+To **change** the LLM later, either edit `.env` (takes effect on next
+`docker compose up`), or use **Settings → LLM** in the GUI. If you edit the GUI
+and also have the `.env` values set, the `.env` wins on the next start.
 
-This is the *only* way to set the model: the V1 web app reads the LLM from its
-profile store (persisted in `OPENHANDS_STATE`), not from `LLM_*` env vars. Once
-saved, the setting survives restarts.
+Why a sidecar: the V1 web app does *not* read `LLM_*` / `TAVILY_API_KEY` from
+the environment — it reads the LLM and MCP servers from its own settings store
+(GUI: *Settings → LLM* / *Settings → MCP*), persisted in `OPENHANDS_STATE`. The
+sidecar writes through the same V1 API the GUI uses. Full rationale:
+`MEMORIES.md`.
 
 ### Environment Variables
 
-The LLM is configured in the GUI (above), **not** via env vars. The remaining
+The LLM and MCP servers are configured via `.env` (written into OpenHands by
+the `oh-bootstrap` sidecar), with the GUI as an alternative. The remaining
 vars control ports, logging, and mounts:
 
 | Variable | Default | Description |
@@ -101,7 +107,17 @@ vars control ports, logging, and mounts:
 | `LOG_ALL_EVENTS` | `false` | Log all OpenHands events |
 | `LOG_LEVEL` | `INFO` | OpenHands log level |
 | `WORKSPACE_DIR` | `./workspace` | Workspace mount path |
-| `OPENHANDS_STATE` | `./openhands-state` | OpenHands state directory (holds the persisted LLM profile) |
+| `OPENHANDS_STATE` | `./openhands-state` | OpenHands state directory (holds the persisted LLM profile + MCP config) |
+| `LLM_MODEL` | `openai/qwen-local` | LLM model id written into OpenHands by the bootstrap |
+| `LLM_BASE_URL` | `http://host.docker.internal:8000/v1` | vLLM base URL (through the SSH tunnel) |
+| `LLM_API_KEY` | `local-dgx-key` | Placeholder key (vLLM does not authenticate); a key you set by hand in the GUI is preserved |
+| `LLM_PROFILE_NAME` | `openai_qwen-local` | Name of the saved LLM profile in the GUI (matches the GUI's own naming for the default model) |
+| `DUCKDUCKGO_MCP_URL` | `http://host.docker.internal:8001/sse` | SSE URL of the local DuckDuckGo MCP service |
+| `TAVILY_URL` | `https://mcp.tavily.com/mcp` | Tavily MCP endpoint |
+| `TAVILY_API_KEY` | *(empty)* | Tavily API key — leave blank to skip registering Tavily; keep the real key in the git-ignored `.env` only |
+
+Blank `LLM_MODEL` disables LLM bootstrapping (GUI-only); blank
+`TAVILY_API_KEY` disables Tavily.
 
 Sandbox (agent-server container) startup timeouts are also hard-coded in
 `compose.yml`: `SANDBOX_STARTUP_GRACE_SECONDS=600` and
@@ -109,23 +125,32 @@ Sandbox (agent-server container) startup timeouts are also hard-coded in
 and 120 — too short for the agent-server image on a macOS Docker VM).
 
 > **Note on `LLM_MODEL` / `LLM_BASE_URL` / `LLM_API_KEY` / `LLM_TIMEOUT`:**
-> these container env vars were historically documented here, but in the
-> current V1 web app they are ignored. They are only consumed by the V0/CLI
-> path (`LLM.load_from_env` + `--override-with-envs`); the web app and its
-> agent-server read the LLM solely from the GUI profile store, and the
-> `AUTO_FORWARD_PREFIXES` mechanism that used to push `LLM_*` into the
-> agent-server no longer exists in the SDK. If you see them in an older
-> `compose.yml`, they are inert.
+> the OpenHands web app itself does *not* read these container env vars — they
+> are only consumed by the V0/CLI path (`LLM.load_from_env` +
+> `--override-with-envs`), and the `AUTO_FORWARD_PREFIXES` mechanism that once
+> pushed `LLM_*` into the agent-server no longer exists in the SDK. In this
+> stack the `oh-bootstrap` sidecar reads them from `.env` (via compose
+> interpolation) and writes them into the OpenHands settings store, which is
+> why they work here without being "container env vars" as far as the web app
+> is concerned. `LLM_TIMEOUT` is still a no-op: the V1 web app uses the SDK
+> default (300s) per-LLM-request timeout with no env knob.
 
 All defaults are listed in the table above; override in `.env`.
 
-### MCP: DuckDuckGo search
+### MCP: DuckDuckGo search (and optionally Tavily)
 
 A `duckduckgo-mcp` service ships in `compose.yml`, exposing an SSE endpoint at
-`http://localhost:8001/sse` on the macOS host.
-
-Add it to OpenHands (Settings > MCP) as:
+`http://localhost:8001/sse` on the macOS host. The `oh-bootstrap` sidecar
+registers it in OpenHands automatically on each start (from
+`DUCKDUCKGO_MCP_URL` in `.env`), so there is nothing to add by hand. If you
+prefer to do it manually, add it under **Settings > MCP** as:
 
 - **Server type:** SSE
 - **URL:** `http://host.docker.internal:8001/sse` (from the OpenHands container)
   or `http://localhost:8001/sse` if OpenHands runs on the host
+
+Tavily (remote, key required) is registered the same way: set `TAVILY_API_KEY`
+in `.env` and the bootstrap adds the `streamable-http` server at `TAVILY_URL`.
+Leave the key blank to keep Tavily off. Keep the real key in the git-ignored
+`.env` only — never commit it. Details in
+`.agents/skills/mcp-search-servers/SKILL.md`.

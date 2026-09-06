@@ -25,13 +25,14 @@ services:
       # app-server and has no effect.
       SANDBOX_STARTUP_GRACE_SECONDS: "600"
       OH_APP_CONVERSATION_SANDBOX_STARTUP_TIMEOUT: "600"
-      # NOTE: the LLM is NOT configured here. The V1 web app reads the LLM
-      # from its own profile store (GUI: Settings -> LLM), which persists in
-      # the state volume. The legacy LLM_MODEL / LLM_BASE_URL / LLM_API_KEY
-      # container env vars are only honored by the V0/CLI path
-      # (LLM.load_from_env + --override-with-envs) and are ignored by the web
-      # app — so setting them does nothing and the onboarding prompt still
-      # asks. Set the model once in the UI (see README: "Configure the model").
+      # NOTE: the LLM is NOT configured via container env vars here. The V1 web
+      # app reads the LLM from its own settings store (GUI: Settings -> LLM),
+      # which persists in the state volume. The legacy LLM_MODEL / LLM_BASE_URL /
+      # LLM_API_KEY container env vars are only honored by the V0/CLI path
+      # (LLM.load_from_env + --override-with-envs) and are ignored by the web app.
+      # To configure from a file instead of the GUI, the `oh-bootstrap` sidecar
+      # (below) reads LLM_*/TAVILY_API_KEY from .env and writes them into the
+      # settings store via the V1 API on each start. See MEMORIES.md.
       #
       # Per-LLM-request HTTP timeout: the V1 web app uses the SDK default
       # (300s), set on the LLM object from the profile — there is no env knob
@@ -55,6 +56,34 @@ services:
     stdin_open: true
     tty: true
     restart: unless-stopped
+
+  # One-shot bootstrap: copies the LLM + MCP config from .env into the
+  # OpenHands settings store on each start (idempotent, no-op once configured).
+  # The V1 web app ignores LLM_* / TAVILY_API_KEY env vars, so this is the bridge.
+  # See MEMORIES.md for the full rationale. Exits 0 on success (stays stopped);
+  # `on-failure` retries only if the app server was unreachable.
+  oh-bootstrap:
+    image: docker.openhands.dev/openhands/openhands:${OPENHANDS_TAG}
+    container_name: oh-bootstrap
+    pull_policy: always
+    # Bypass the image entrypoint.sh (which starts the server + needs
+    # SANDBOX_USER_ID); just run the stdlib bootstrap script as root.
+    entrypoint: ["python", "/bootstrap/oh_bootstrap.py"]
+    command: []
+    volumes:
+      - ./oh_bootstrap.py:/bootstrap/oh_bootstrap.py:ro
+    environment:
+      OH_URL: http://openhands:3000
+      LLM_MODEL: ${LLM_MODEL}
+      LLM_BASE_URL: ${LLM_BASE_URL}
+      LLM_API_KEY: ${LLM_API_KEY}
+      LLM_PROFILE_NAME: ${LLM_PROFILE_NAME}
+      DUCKDUCKGO_MCP_URL: ${DUCKDUCKGO_MCP_URL}
+      TAVILY_URL: ${TAVILY_URL}
+      TAVILY_API_KEY: ${TAVILY_API_KEY}
+    depends_on:
+      - openhands
+    restart: on-failure
 
   duckduckgo-mcp:
     image: python:3.12-slim

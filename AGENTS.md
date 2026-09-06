@@ -70,12 +70,19 @@ Two self-contained stacks:
   `1.16.0`) before a release if reproducibility matters.
 - **LLM configuration (model, base URL, API key)**: the V1 web app does **not**
   read `LLM_MODEL` / `LLM_BASE_URL` / `LLM_API_KEY` container env vars. It
-  resolves the LLM from the GUI profile store (`Settings → LLM`), persisted in
-  the state volume (`OPENHANDS_STATE`). Those env vars are only honored by the
-  V0/CLI path (`LLM.load_from_env` + `--override-with-envs`). Setting them in
-  `compose.yml` does nothing and the onboarding prompt still asks for the model.
-  Set it once in the UI. The agent-server config loader only parses `OH_*`
-  prefixed vars (see `agent_server/config.py` `ENVIRONMENT_VARIABLE_PREFIX`).
+  resolves the LLM and MCP servers from its own settings store (GUI:
+  `Settings → LLM` / `Settings → MCP`), persisted in the state volume
+  (`OPENHANDS_STATE`). Those env vars are only honored by the V0/CLI path
+  (`LLM.load_from_env` + `--override-with-envs`).
+  The `oh-bootstrap` sidecar in `macos_client/compose.yml` closes that gap: it
+  reads `LLM_*`, `DUCKDUCKGO_MCP_URL`, `TAVILY_API_KEY` from `.env` (compose
+  interpolation) and writes them into the settings store via the V1 REST API
+  (`POST /api/v1/settings` with `agent_settings_diff`) on every start. It is
+  idempotent (no-op once configured) and the file is the source of truth for
+  model/base URL; a hand-set API key is preserved unless model/base differ.
+  The agent-server config loader only parses `OH_*` prefixed vars (see
+  `agent_server/config.py` `ENVIRONMENT_VARIABLE_PREFIX`). Rationale + verified
+  API surface: `MEMORIES.md`.
 - **`LLM_TIMEOUT`**: was set to 120s in `macos_client/compose.yml`, but this is
   a **no-op** in the V1 web app. The per-LLM-request timeout is the SDK default
   (300s) attached to the LLM object from the profile; the agent-server does not

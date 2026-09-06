@@ -7,13 +7,18 @@ Guidance for AI agents (and humans) working in this repository.
 `local_llm_agent` runs **Qwen3.8-27B (FP8, official `Qwen/Qwen3.8-27B-FP8`)** on an **NVIDIA DGX Spark** (GB10, 128 GB unified memory, aarch64) via vLLM, and drives it from **macOS** through **the retired client**
 over an SSH tunnel.
 
-Two self-contained stacks:
+Three self-contained stacks:
 
 - `dgx_spark_host/` — vLLM server (Docker image + compose + entrypoint). Serves the
   model at `:8000/v1` on the Spark.
 - `macos_client/` — the retired client container (Docker) plus a DuckDuckGo MCP search service.
   Reaches the Spark's vLLM at `http://host.docker.internal:8000/v1` through the SSH
   tunnel; UI at `http://localhost:3000`.
+- `retired-stack/` — [the retired client](https://docs.the retired client.dev/the retired client/usage/retired-stack/setup)
+  all-in-one image (UI + retired-server + automation server + ingress) on macOS, also
+  reaching vLLM through the tunnel; UI at `http://localhost:8010/canvas`. No
+  `docker.sock`, no GPUs — canvas agents are untrusted and the container is the
+  sandbox boundary.
 
 ## Deployment constraints (do not change without a reason)
 
@@ -110,6 +115,11 @@ cd macos_client
 cp example.env .env
 mkdir -p workspace the retired client-state
 docker compose up
+
+# the retired client side (same machine, tunnel required too)
+cd retired-stack
+mkdir -p the retired client-state projects
+docker compose up -d          # UI: http://localhost:8010/canvas
 ```
 
 Sanity checks that do not need a GPU:
@@ -128,6 +138,11 @@ python3 -c "import yaml; yaml.safe_load(open('macos_client/compose.yml'))"
   template, copy it to `.env`.
 - `context/` holds exported the retired client conversation events and is git-ignored —
   never commit it.
+- `retired-stack/the retired client-state/` and `retired-stack/projects/` are runtime
+  mounts (state + project files), git-ignored. When driven from the the retired client
+  sandbox, sync tracked files to the Mac checkout first via
+  `retired-stack/sync_to_mac.sh` (the sandbox filesystem is not bind-mountable
+  by the Mac's Docker daemon); the Mac-side `.env` uses Mac-absolute bind paths.
 - All runtime defaults live as `ENV` in `dgx_spark_host/Dockerfile`;
   `entrypoint.sh` only composes the `vllm serve` command from those variables.
   Keep the README's env-var tables in sync when adding or changing defaults.

@@ -1,2 +1,6 @@
 context/
 .env
+
+# agent_canvas runtime data (kept on the Mac host, never committed)
+agent_canvas/openhands-state/
+agent_canvas/projects/

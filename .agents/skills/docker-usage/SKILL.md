@@ -18,16 +18,17 @@ triggers:
   - gpu not available
 ---
 
-This repository is **two independent Docker stacks** that must run on two
+This repository is **three independent Docker stacks**; two must run on two
 different machines. Get the mapping right first:
 
 | Stack | Directory | Machine | What it runs | Command |
 |---|---|---|---|---|
 | vLLM server | `dgx_spark_host/` | NVIDIA DGX Spark (aarch64, GPU) | Qwen3.8-27B (NVFP4) served at `:8000/v1` | `docker compose -f compose.yml up --build` |
 | OpenHands client | `macos_client/` | macOS | OpenHands container (UI `:3000`) + DuckDuckGo MCP | `docker compose up` |
+| Agent Canvas | `agent_canvas/` | macOS | Canvas UI `:8010/canvas` + agent-server + automation server + ingress (single container) | `docker compose up -d` |
 
 They talk to each other over an **SSH tunnel** (see below). There is no single
-compose file that spans both.
+compose file that spans both machines.
 
 ## Bringing a stack up
 
@@ -49,6 +50,26 @@ docker compose up
 
 The client reaches the model at `http://host.docker.internal:8000/v1`, and the
 agent-server reaches DuckDuckGo at `http://host.docker.internal:8001/sse`.
+
+**Agent Canvas** — needs the tunnel too:
+
+```bash
+cd agent_canvas
+cp example.env .env        # first time only; keep bind paths Mac-absolute when
+mkdir -p openhands-state projects   # also driven from the OpenHands sandbox
+docker compose up -d       # UI: http://localhost:8010/canvas
+```
+
+LLM profile: set in Settings → LLM (base URL `http://host.docker.internal:8000/v1`,
+model `qwen-local`, key `local-dgx-key`) or via API — `POST /api/profiles/<name>`
++ `/activate` with the session key from
+`openhands-state/agent-canvas/api-key.txt` (see README). Deliberately no
+`docker.sock`/`gpus`: canvas agents are untrusted, the container is the
+sandbox boundary. When driving this stack from the OpenHands sandbox, run
+`bash agent_canvas/sync_to_mac.sh` first — the sandbox filesystem is not a
+path the Mac's Docker daemon can bind (its `/workspace` is a virtiofs share,
+not the Mac checkout), so compose files and bind dirs must live in the Mac
+checkout (`/Users/user/git/local_llm_agent`).
 
 ## The SSH tunnel (why `host.docker.internal:8000` works)
 
@@ -99,9 +120,16 @@ docker compose logs -f --tail=200 openhands
 docker compose restart openhands
 docker compose down
 
+cd agent_canvas   # or: docker compose -f agent_canvas/compose.yml ...
+sudo docker compose up -d
+sudo docker compose logs -f --tail=200 agent-canvas
+sudo docker compose restart agent-canvas
+sudo docker compose down
+
 # One-off shell / exec into a running container
 docker exec -it dgx-qwen-vllm bash
 docker exec -it openhands bash
+docker exec -it agent-canvas bash
 ```
 
 ## `.env` and secrets (do not leak)
@@ -118,7 +146,7 @@ docker exec -it openhands bash
 ## Troubleshooting quick hits
 
 - **`port is already allocated`** — a previous container or tunnel holds the port.
-  `docker compose -f ... ps` + `lsof -i :8000` (or `:3000`/`:8001`) to find the
+  `docker compose -f ... ps` + `lsof -i :8000` (or `:3000`/`:8001`/`:8010`) to find the
   holder; stop it or `docker compose down` the stack.
 - **GPU not visible in the vLLM container** — NVIDIA Container Toolkit not
   installed/enabled on the Spark host; `docker run --rm --gpus all nvidia/cuda:12.4.0-base nvidia-smi`.

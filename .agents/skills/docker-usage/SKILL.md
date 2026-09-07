@@ -50,17 +50,30 @@ docker compose up -d       # UI: http://localhost:8010/canvas
 The Canvas UI reaches the model at `http://host.docker.internal:8000/v1`.
 
 LLM profile: set in Settings → LLM (base URL `http://host.docker.internal:8000/v1`,
-model `qwen-local`, key `local-dgx-key`) or via API — `POST /api/profiles/<name>`
+model `openai/qwen-local`, key `local-dgx-key`) or via API — `POST /api/profiles/<name>`
 + `/activate` with the session key from
 `openhands-state/agent-canvas/api-key.txt` (see README). The container runs
 `--privileged` by default (`AGENT_CANVAS_PRIVILEGED=true`) so the in-container
 Docker can pull images — see "Docker inside the Canvas container" below. No
-`docker.sock`/`gpus` are exposed. When driving this stack from the OpenHands
-sandbox, run
-`bash agent_canvas/sync_to_mac.sh` first — the sandbox filesystem is not a
-path the Mac's Docker daemon can bind (its `/workspace` is a virtiofs share,
-not the Mac checkout), so compose files and bind dirs must live in the Mac
-checkout (`/Users/user/git/local_llm_agent`).
+`docker.sock`/`gpus` are exposed.
+
+### When driving this stack from the OpenHands sandbox
+
+The sandbox's filesystem is **not** a path the Mac's Docker daemon can bind
+(the sandbox's `/workspace` is a virtiofs share, not the Mac checkout), so the
+compose file and the bind dirs must live in the Mac checkout
+(`/Users/user/git/local_llm_agent`). The old `agent_canvas/sync_to_mac.sh`
+helper has been removed. The supported flow is now **push to the remote and
+pull on the Mac**:
+
+1. From the sandbox: commit and push your changes to `origin`.
+2. On the Mac: `git -C /Users/user/git/local_llm_agent pull`, then
+   `cd agent_canvas && sudo docker compose pull && sudo docker compose up -d`
+   (`pull` + `up -d` because `AGENT_CANVAS_TAG` may have moved).
+
+The `.env` on the Mac uses Mac-absolute bind paths for `AGENT_CANVAS_STATE` /
+`PROJECTS_DIR`, so the Mac daemon can mount them. Do not try to `docker compose
+up` from the sandbox against the Mac daemon.
 
 ## The SSH tunnel (why `host.docker.internal:8000` works)
 

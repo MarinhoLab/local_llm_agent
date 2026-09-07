@@ -52,9 +52,11 @@ The Canvas UI reaches the model at `http://host.docker.internal:8000/v1`.
 LLM profile: set in Settings → LLM (base URL `http://host.docker.internal:8000/v1`,
 model `qwen-local`, key `local-dgx-key`) or via API — `POST /api/profiles/<name>`
 + `/activate` with the session key from
-`openhands-state/agent-canvas/api-key.txt` (see README). Deliberately no
-`docker.sock`/`gpus`: canvas agents are untrusted, the container is the
-sandbox boundary. When driving this stack from the OpenHands sandbox, run
+`openhands-state/agent-canvas/api-key.txt` (see README). The container runs
+`--privileged` by default (`AGENT_CANVAS_PRIVILEGED=true`) so the in-container
+Docker can pull images — see "Docker inside the Canvas container" below. No
+`docker.sock`/`gpus` are exposed. When driving this stack from the OpenHands
+sandbox, run
 `bash agent_canvas/sync_to_mac.sh` first — the sandbox filesystem is not a
 path the Mac's Docker daemon can bind (its `/workspace` is a virtiofs share,
 not the Mac checkout), so compose files and bind dirs must live in the Mac
@@ -95,9 +97,39 @@ deliberate:
   settings, the LLM profile, the session API key, and conversation data — it
   survives `--rm` / image updates. Do not delete it or you lose the persisted
   profile and history.
-- **No `docker.sock`, no `gpus`** on the Canvas container: canvas agents are
-  untrusted and the container is the sandbox boundary. `PROJECTS_DIR` (mounted
-  at `/projects`) is the only host path the agents can touch.
+- **No `docker.sock`, no `gpus`** on the Canvas container: `PROJECTS_DIR`
+  (mounted at `/projects`) is the only host path the agents can touch. The
+  container is otherwise `--privileged` (see below) so agents can run their own
+  Docker daemon.
+- **`AGENT_CANVAS_PRIVILEGED`** (default `true`) — the Canvas container runs
+  with `--privileged` so the in-container Docker can `docker pull`. A nested
+  daemon must extract image layers, which needs `CAP_SYS_ADMIN` to mount /
+  `unshare`; the default *unprivileged* capability set (`CapBnd 0xa80425fb`,
+  no `CAP_SYS_ADMIN`/`CAP_NET_ADMIN`) can't do it. Set it to `false` to restore
+  the "canvas agents are untrusted, the container is the sandbox boundary"
+  posture — in-container docker pulls then stop working.
+
+## Docker inside the Canvas container (nested daemon)
+
+The Canvas image ships the `docker` client and `dockerd` (and passwordless
+`sudo`). An agent in the container can run its own daemon to build/pull/run
+images — this is what `--privileged` enables. Inside the container:
+
+```bash
+sudo dockerd --iptables=false --bridge=none &   # nested daemon
+# wait for the socket, then:
+sudo docker pull <image>
+```
+
+- `--iptables=false --bridge=none` are needed because the nested daemon shares
+  the container's network namespace; the host's iptables are off-limits.
+- Without `--privileged` (i.e. `AGENT_CANVAS_PRIVILEGED=false`), `dockerd`
+  starts but `docker pull` fails at layer extraction with
+  `operation not permitted` — on the default `overlayfs` driver the bind-mount
+  of the snapshot is denied, and the `vfs` driver still fails on `unshare`.
+  That's exactly why this flag exists; don't try to work around it.
+- The nested daemon's state lives in the container's `/var/lib/docker`; it is
+  not one of the persistent mounts and is lost when the container is removed.
 
 ## Everyday container operations
 

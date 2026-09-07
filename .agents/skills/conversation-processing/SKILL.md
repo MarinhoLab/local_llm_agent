@@ -137,6 +137,56 @@ def conversation_text(conv_dir):
     return "\n".join(lines)
 ```
 
+## Manually condensing a conversation
+
+Yes — condensation can be forced on demand. The Agent Server exposes a
+dedicated endpoint that injects a `CondensationRequest` and runs one agent step
+so the condenser summarizes the history:
+
+```
+POST /api/conversations/{conversation_id}/condense
+```
+
+- **No request body.** Returns `200 {"success": true}` on success, or `404`
+  if the conversation id is unknown.
+- **Auth:** the session API key — header `X-Session-API-Key` (the key is
+  auto-generated and persisted in the state volume at
+  `~/.openhands/agent-canvas/api-key.txt`). Verified: 200 with the key,
+  401 without.
+
+```bash
+KEY=$(tr -d '\n' < ~/.openhands/agent-canvas/api-key.txt)
+# conversation id = meta.json:conversation_id (dashed) or the hex dir name
+curl -sS -X POST -H "X-Session-API-Key: $KEY" \
+  http://localhost:18000/api/conversations/<conversation_id>/condense
+```
+
+Notes:
+
+- **Requires a condenser that handles requests.** This only works if the
+  conversation's agent uses an `LLMSummarizingCondenser` (the Agent Canvas
+  default, which returns `handles_condensation_requests() == True`). If the
+  profile was switched to a `NoOpCondenser` or condensation is disabled, the
+  call raises `ValueError: Cannot condense conversation ...` (HTTP 500) with a
+  hint to configure an `LLMSummarizingCondenser`.
+- **It blocks on a running step.** If the agent is mid-turn, `condense()` waits
+  for the current step to finish before condensing, so it is safe to call while
+  the agent is active.
+- **It is a view operation, not a file delete.** The condenser marks older
+  events as *forgotten* (`Condensation.forgotten_event_ids`) and inserts a
+  `CondensationSummaryEvent`; those events are excluded from the agent's *future*
+  LLM view. The on-disk `events/*.json` files are **not** deleted, so
+  history-mining (the "Typical uses" below) is unaffected by condensation.
+- **SDK equivalent:** on an SDK conversation object, `conversation.condense()`
+  does the same thing (see
+  `openhands.sdk.conversation.impl.local_conversation.LocalConversation.condense`).
+
+For contrast, the condenser also runs **automatically** — on a
+context-window-exceeded error, when the view exceeds `max_size` events
+(default 240), or when the total token count exceeds `max_tokens` (which
+defaults to the LLM's effective input limit). The manual endpoint just forces
+that same path on demand.
+
 ## Performance rules (these corpora are large)
 
 - `base_state.json` can be ~100 KB+, and the **`SystemPromptEvent`**

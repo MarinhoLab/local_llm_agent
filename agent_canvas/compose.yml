@@ -8,9 +8,8 @@
 # session API key that the launcher auto-generates and persists in the
 # .openhands state mount.
 #
-# Port choice: 8010 keeps this stack clear of the other two in this repo —
-# 8000 (SSH tunnel to the Spark's vLLM) and 8001 (duckduckgo-mcp) on the host,
-# and 3000 (macos_client OpenHands UI).
+# Port choice: 8010 keeps this stack clear of the other one in this repo —
+# 8000 (SSH tunnel to the Spark's vLLM) on the host.
 
 services:
   agent-canvas:
@@ -25,8 +24,7 @@ services:
 
     volumes:
       # Settings, LLM profile, API key, and conversation data persist here —
-      # survives `--rm` / image updates. Kept separate from the macos_client
-      # OpenHands state dir on purpose (independent profile/skill stores).
+      # survives `--rm` / image updates.
       - ${AGENT_CANVAS_STATE:-./openhands-state}:/home/openhands/.openhands
       # Project files the canvas agents may work in. Container-side boundary:
       # agents can only touch what is mounted.
@@ -34,7 +32,7 @@ services:
 
     # Lets the backend reach host-published services through the tunnel —
     # i.e. the Spark's vLLM at http://host.docker.internal:8000/v1 (Settings
-    # > LLM in the UI) or http://host.docker.internal:8001/sse (DuckDuckGo MCP).
+    # > LLM in the UI).
     extra_hosts:
       - "host.docker.internal:host-gateway"
 

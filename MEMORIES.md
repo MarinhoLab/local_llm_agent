@@ -1,8 +1,16 @@
 # MEMORIES.md
 
+> **Note (2026-09): the `macos_client/` stack — and with it the `oh-bootstrap`
+> sidecar, the `duckduckgo-mcp` service, and `example.env` — has been removed
+> from this repository.** Most of the plan and log below describes that now-
+> removed work and is kept only as history. The one piece that remains
+> directly useful is the **verified OpenHands V1 REST API surface** (settings
+> store, profiles, MCP registration) under
+> [Investigation log](#investigation-log) — that API is still how the
+> `agent_canvas` stack configures its LLM profile and MCP servers.
+
 A persistent, append-friendly record of **what we tried, what worked, and why**
-for this repo. It doubles as the plan for the "load LLM + MCP from a file"
-work (see [Plan](#plan)). New findings are appended to
+for this repo. New findings are appended to
 [Investigation log](#investigation-log) rather than rewriting history.
 
 The goal, in one line: **make a fresh `docker compose up` on a new machine come

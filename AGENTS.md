@@ -7,13 +7,10 @@ Guidance for AI agents (and humans) working in this repository.
 `local_llm_agent` runs **Qwen3.8-27B (FP8, official `Qwen/Qwen3.8-27B-FP8`)** on an **NVIDIA DGX Spark** (GB10, 128 GB unified memory, aarch64) via vLLM, and drives it from **macOS** through **OpenHands**
 over an SSH tunnel.
 
-Three self-contained stacks:
+Two self-contained stacks:
 
 - `dgx_spark_host/` — vLLM server (Docker image + compose + entrypoint). Serves the
   model at `:8000/v1` on the Spark.
-- `macos_client/` — OpenHands container (Docker) plus a DuckDuckGo MCP search service.
-  Reaches the Spark's vLLM at `http://host.docker.internal:8000/v1` through the SSH
-  tunnel; UI at `http://localhost:3000`.
 - `agent_canvas/` — [Agent Canvas](https://docs.openhands.dev/openhands/usage/agent-canvas/setup)
   all-in-one image (UI + agent-server + automation server + ingress) on macOS, also
   reaching vLLM through the tunnel; UI at `http://localhost:8010/canvas`. No
@@ -67,41 +64,29 @@ Three self-contained stacks:
   to 1,048,576 via YaRN (factor 4.0, must land in `text_config.rope_parameters` and
   include `mrope_*` fields or multimodal RoPE breaks). It is static and costs ~36 GiB
   of KV, so it stays off by default.
-- **OpenHands**: current images (v1.9+, latest v1.16.0 as of 2026-08-27)
-  bundle the agent-server into the app image at build time — there is no
-  separate agent-server image to pin and no `AGENT_SERVER_IMAGE_*` runtime
-  variable (older images did; that guidance is retired). `OPENHANDS_TAG=latest`
-  with `pull_policy: always` keeps the image current; pin a specific tag (e.g.
-  `1.16.0`) before a release if reproducibility matters.
-- **LLM configuration (model, base URL, API key)**: the V1 web app does **not**
-  read `LLM_MODEL` / `LLM_BASE_URL` / `LLM_API_KEY` container env vars. It
-  resolves the LLM and MCP servers from its own settings store (GUI:
+- **OpenHands / Agent Canvas images**: the `agent_canvas` stack uses the
+  all-in-one `ghcr.io/openhands/agent-canvas` image, which bundles the
+  agent-server — there is no separate agent-server image to pin and no
+  `AGENT_SERVER_IMAGE_*` runtime variable (older OpenHands images did; that
+  guidance is retired). `AGENT_CANVAS_TAG=latest` keeps the image current; pin a
+  specific tag before a release if reproducibility matters.
+- **LLM configuration (model, base URL, API key)**: the OpenHands V1 web app
+  does **not** read `LLM_MODEL` / `LLM_BASE_URL` / `LLM_API_KEY` container env
+  vars. It resolves the LLM and MCP servers from its own settings store (GUI:
   `Settings → LLM` / `Settings → MCP`), persisted in the state volume
-  (`OPENHANDS_STATE`). Those env vars are only honored by the V0/CLI path
-  (`LLM.load_from_env` + `--override-with-envs`).
-  The `oh-bootstrap` sidecar in `macos_client/compose.yml` closes that gap: it
-  reads `LLM_*`, `DUCKDUCKGO_MCP_URL`, `TAVILY_API_KEY` from `.env` (compose
-  interpolation) and writes them into the settings store via the V1 REST API
-  (`POST /api/v1/settings` with `agent_settings_diff`) on every start. It is
-  idempotent (no-op once configured) and the file is the source of truth for
-  model/base URL; a hand-set API key is preserved unless model/base differ.
-  The agent-server config loader only parses `OH_*` prefixed vars (see
-  `agent_server/config.py` `ENVIRONMENT_VARIABLE_PREFIX`). Rationale + verified
-  API surface: `MEMORIES.md`.
-- **`LLM_TIMEOUT`**: was set to 120s in `macos_client/compose.yml`, but this is
-  a **no-op** in the V1 web app. The per-LLM-request timeout is the SDK default
-  (300s) attached to the LLM object from the profile; the agent-server does not
-  read any `LLM_*` env var, and the `AUTO_FORWARD_PREFIXES` mechanism that
-  previously pushed `LLM_*` into the agent-server no longer exists in the SDK.
-  Removed from `compose.yml`.
-- **DuckDuckGo MCP**: the SSE client is the OpenHands agent-server inside the
-  openhands container, which dials http://host.docker.internal:8001/sse. The
-  server's DNS-rebinding allowlist must accept host.docker.internal
-  (localhost/127.0.0.1 cover a non-Docker OpenHands on the Mac).
-- **MCP search servers**: DuckDuckGo (local SSE) and Tavily (remote
-  streamable-http, API key) are both registered in OpenHands → Settings → MCP.
-  `.agents/skills/mcp-search-servers/SKILL.md` documents both and how to keep the
-  Tavily key out of git.
+  (`AGENT_CANVAS_STATE`, mounted at `/home/openhands/.openhands`). Those env
+  vars are only honored by the V0/CLI path
+  (`LLM.load_from_env` + `--override-with-envs`), and the agent-server config
+  loader only parses `OH_*` prefixed vars (see `agent_server/config.py`
+  `ENVIRONMENT_VARIABLE_PREFIX`). So the LLM profile is set in the Canvas UI
+  (Settings → LLM) or via the V1 REST API — see the `agent_canvas` section of
+  the README for the profile example. Rationale + verified API surface:
+  `MEMORIES.md`.
+- **MCP search servers**: web-search servers (e.g. Tavily, remote
+  streamable-http, API key) are registered in OpenHands → Settings → MCP, or via
+  the V1 REST API (`POST /api/v1/settings` with
+  `agent_settings_diff.mcp_config`, which is applied wholesale — send the full
+  desired map). Keep any MCP API key out of git.
 
 ## Common commands
 
@@ -110,13 +95,7 @@ Three self-contained stacks:
 cd dgx_spark_host
 docker compose -f compose.yml up --build     # first run downloads ~24 GB of weights
 
-# macOS side (SSH tunnel first: ssh -N -L 8000:localhost:8000 USER@DGX_SPARK_IP)
-cd macos_client
-cp example.env .env
-mkdir -p workspace openhands-state
-docker compose up
-
-# Agent Canvas side (same machine, tunnel required too)
+# Agent Canvas side (macOS, SSH tunnel first: ssh -N -L 8000:localhost:8000 USER@DGX_SPARK_IP)
 cd agent_canvas
 mkdir -p openhands-state projects
 docker compose up -d          # UI: http://localhost:8010/canvas
@@ -126,7 +105,7 @@ Sanity checks that do not need a GPU:
 
 ```bash
 bash -n dgx_spark_host/entrypoint.sh
-python3 -c "import yaml; yaml.safe_load(open('macos_client/compose.yml'))"
+python3 -c "import yaml; yaml.safe_load(open('agent_canvas/compose.yml'))"
 # entrypoint dry-run: put a stub `vllm` script in PATH and run entrypoint.sh
 ```
 
@@ -134,8 +113,8 @@ python3 -c "import yaml; yaml.safe_load(open('macos_client/compose.yml'))"
 
 - `.env` files are local-only and hold secrets (`HF_TOKEN`) — they are
   git-ignored. `dgx_spark_host/` reads `HF_CACHE`/`HF_TOKEN` from `.env` when
-  present (compose defaults work without it); `macos_client/example.env` is the
-  template, copy it to `.env`.
+  present (compose defaults work without it). `agent_canvas/example.env` is the
+  Canvas stack's tracked template — copy it to `.env`.
 - `context/` holds exported OpenHands conversation events and is git-ignored —
   never commit it.
 - `agent_canvas/openhands-state/` and `agent_canvas/projects/` are runtime

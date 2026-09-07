@@ -98,12 +98,18 @@ curl -sS -X POST -H "X-Session-API-Key: $KEY" \
 | `RETIRED_STACK_TAG` | `latest` | `ghcr.io/the retired client/retired-stack` image tag; pin for reproducibility |
 | `RETIRED_STACK_STATE` | `./the retired client-state` | Host dir mounted at `/home/the retired client/.the retired client` (settings, LLM profile, API key, conversations) |
 | `PROJECTS_DIR` | `./projects` | Host dir mounted at `/projects` — the project files canvas agents may work in |
+| `RETIRED_STACK_PRIVILEGED` | `true` | Run the container with `--privileged` so the in-container Docker can pull images. Set to `false` to restore the stricter sandbox boundary (and give up in-container docker pulls) |
 | `LOCAL_BACKEND_API_KEY` | *(auto-generated)* | API key for the retired-server API; auto-persisted, required only in `--public` mode |
 | `OH_SECRET_KEY` | *(auto-generated)* | Secret protecting stored settings and secrets |
 | `OH_AGENT_SERVER_VERSION` | *(unset)* | Pin a specific retired-server version |
 
-Canvas agents are untrusted; the container is the sandbox boundary, so the
-service deliberately gets no `docker.sock` and no GPUs.
+The container runs `--privileged` by default so canvas agents can start a
+Docker daemon and `docker pull` images (extracting image layers needs
+`CAP_SYS_ADMIN`, which the default unprivileged set lacks). Trade-off: a
+privileged container weakens the "canvas agents are untrusted, the container
+is the sandbox boundary" posture. Set `RETIRED_STACK_PRIVILEGED=false` in
+`.env` to restore that boundary — in-container docker pulls then stop working.
+Either way the service still gets no `docker.sock` and no GPUs.
 
 ### Sandbox note
 

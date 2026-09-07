@@ -36,7 +36,16 @@ services:
     extra_hosts:
       - "host.docker.internal:host-gateway"
 
-    # No docker.sock and no gpus: canvas agents are untrusted; this container
-    # is the sandbox boundary (per the docs' security note).
+    # Privileged (default on) so in-container Docker can pull images: the
+    # OpenHands sandbox runs a nested Docker daemon, and extracting image
+    # layers needs CAP_SYS_ADMIN to mount/unshare them — the default
+    # unprivileged capability set lacks it (pulls then fail with
+    # "operation not permitted" at layer extraction). Trade-off: a privileged
+    # container weakens the "canvas agents are untrusted, the container is the
+    # sandbox boundary" posture — an agent that escapes the process sandbox
+    # reaches the host. Set AGENT_CANVAS_PRIVILEGED=false to restore that
+    # boundary and give up in-container docker pulls. Still no docker.sock or
+    # gpus are exposed either way.
+    privileged: ${AGENT_CANVAS_PRIVILEGED:-true}
 
     restart: unless-stopped

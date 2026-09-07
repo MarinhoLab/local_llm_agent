@@ -14,8 +14,10 @@ Two self-contained stacks:
 - `agent_canvas/` — [Agent Canvas](https://docs.openhands.dev/openhands/usage/agent-canvas/setup)
   all-in-one image (UI + agent-server + automation server + ingress) on macOS, also
   reaching vLLM through the tunnel; UI at `http://localhost:8010/canvas`. No
-  `docker.sock`, no GPUs — canvas agents are untrusted and the container is the
-  sandbox boundary.
+  `docker.sock`, no GPUs. Runs `--privileged` by default
+  (`AGENT_CANVAS_PRIVILEGED=true`) so the in-container Docker can pull images;
+  set it to `false` to restore the "canvas agents are untrusted, the container
+  is the sandbox boundary" posture (in-container docker pulls then stop working).
 
 ## Deployment constraints (do not change without a reason)
 

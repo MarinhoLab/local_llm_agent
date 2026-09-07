@@ -1,12 +1,12 @@
 ---
 name: conversation-processing
 description: >-
-  Where OpenHands conversations are stored on this machine, their on-disk
-  layout (current per-conversation dirs, the flat bash_events dump, and the
-  legacy per-event context dumps), how to read them, and safe, fast patterns
-  for mining/processing them without leaking secrets or melting the machine.
+  Where OpenHands conversations are stored in the Agent Canvas sandbox, their
+  on-disk layout (per-conversation event dirs and the flat bash_events dump),
+  how to read them, and safe, fast patterns for mining/processing them without
+  leaking secrets or melting the machine.
 license: MIT
-compatibility: Linux/macOS sandbox with the /workspace volume populated
+compatibility: Linux Agent Canvas sandbox (state volume at /home/openhands/.openhands)
 triggers:
   - conversations
   - conversation history
@@ -16,69 +16,85 @@ triggers:
   - where are conversations
 ---
 
-OpenHands conversation data lives on the shared `/workspace` volume. There are
-**three on-disk formats** to be aware of.
+OpenHands conversation data lives in the Agent Canvas **state volume**, mounted
+at `/home/openhands/.openhands` (host dir `agent_canvas/openhands-state`). The
+live runtime data sits under the `agent-canvas/` subdirectory of that volume.
+There are **two on-disk formats** to be aware of.
 
 ## Where things are
 
 | Location | Format | What it is |
 |---|---|---|
-| `/workspace/conversations/<conversation_id>/` | Current format, one directory per conversation | The canonical store. ~31 conversations as of 2026-09. |
-| `/workspace/bash_events/` | Flat directory, one JSON file per bash command/output | A global, timestamp-prefixed dump of all terminal traffic across conversations. |
-| `/workspace/project/<repo>/context/` | Legacy flat directory, one JSON file per event | Old OpenHands format (one huge `context/` per repo, e.g. ~29k files in `msc_allocation`). Git-ignored; never commit. |
+| `/home/openhands/.openhands/agent-canvas/conversations/<conversation_id>/` | One directory per conversation | The canonical store. |
+| `/home/openhands/.openhands/agent-canvas/bash_events/` | Flat directory, one JSON file per bash command/output | A global, timestamp-prefixed dump of all terminal traffic across conversations. |
 
-### 1. Current format: `/workspace/conversations/<id>/`
+> **Path caveat (important).** This skill documents the *current* Agent Canvas
+> layout, where state lives under the per-user home
+> (`/home/openhands/.openhands/agent-canvas/...`). Older OpenHands versions
+> stored the same data under a `/workspace` volume
+> (`/workspace/conversations/<id>/` and `/workspace/bash_events/`). If you are
+> looking at a repo whose docs reference `/workspace/...`, that is the retired
+> location — map it to `~/.openhands/agent-canvas/...`. There is no legacy
+> per-repo `project/<repo>/context/` dump in the current layout either.
 
-Each conversation directory contains:
+### 1. Per-conversation dir: `.../conversations/<id>/`
 
-- `meta.json` — conversation metadata: `id`, `conversation_id` (dashed form),
-  `title`, `autotitle`, `initial_message`, `agent` (LLM model/base_url),
-  `created_at`/`updated_at`, `tags`, `workspace`, `worktree`, fork pointers
-  (`forked_from_conversation_id` / `forked_from_event_id`), and
+`<id>` is the conversation's hex id (the same value as `meta.json:id`). Each
+directory contains:
+
+- `meta.json` — conversation metadata. Populated fields (as of Agent Server
+  1.44) include: `id`, `conversation_id` (dashed form), `title`, `autotitle`
+  (a bool), `initial_message`, `created_at`/`updated_at`, `tags`, `workspace`
+  (a **dict**: `{"working_dir": ..., "kind": "LocalWorkspace"}`), `worktree`
+  (bool), `forked_from_conversation_id`/`forked_from_event_id`, and
   **`secrets` / `secrets_encrypted`** — sensitive, see "Secrets" below.
-- `base_state.json` — initial environment state snapshot.
-- `TASKS.json` — the task-tracker list for the conversation.
+  Note: there is **no** `agent` field (model/base_url are not stored here) and
+  **no** `initial_message` as a plain string — `initial_message` is a
+  **dict** `{"role", "content", "run"}` where `content` is a list of content
+  blocks.
+- `base_state.json` — initial environment state snapshot (can be ~100 KB+).
 - `owner_lease.json` / `.owner_lease.lock` — runtime lease files; ignore them.
 - `events/` — one JSON file per event, named
   `event-NNNNN-<uuid>.json` (e.g. `event-00042-...`). The 5-digit index is
   zero-padded, so **lexicographic filename order == chronological order**.
-  Some files can be empty (write in progress) — skip zero-byte files.
+  Some files can be empty (write in progress) — skip zero-byte files. There is
+  also an `events/.eventlog.lock` — ignore it.
 
-Each event file is a single JSON object:
+> There is **no** `TASKS.json` in the current layout (task-tracker state is not
+> persisted as a top-level file here).
 
-- `id`, `timestamp`, `source` (`agent` | `user` | `system`), `kind`
-- `ActionEvent` → `action` dict with `kind` (`TerminalAction`,
-  `FileEditorAction`, `TaskTrackerAction`, ...); a `TerminalAction` holds
-  `command`, `is_input`, `reset`.
-- `ObservationEvent` → `observation` dict: for terminal traffic that is
-  `output`, `exit_code`, `error`, `content`.
+Each event file is a single JSON object with `id`, `timestamp`, `source`,
+`parent_id`, and `kind`.
+
+- `source` is one of `agent`, `user`, or **`environment`** (the current runtime
+  uses `environment` heavily — e.g. `ConversationStateUpdateEvent`). Older
+  docs mention `system`; in the current store you will see `environment`.
+- `ActionEvent` → `action` dict with a `kind` (`TerminalAction`,
+  `FileEditorAction`, ...); a `TerminalAction` holds `command`, `is_input`,
+  `reset`.
+- `ObservationEvent` → `observation` dict. For terminal traffic the `kind` is
+  **`TerminalObservation`** (not `BashObservation`) and it holds `content`,
+  `is_error`, `command`, `exit_code`, `timeout`. File edits produce
+  `FileEditorObservation`.
 - `MessageEvent` → `llm_message` (a dict with `role` and `content`, where
   `content` is a **list of content blocks** like `{"type":"text","text":...}`;
   also `thinking_blocks`), plus `activated_skills` and `extended_content`.
   (Not a top-level `content` string.)
-- `ConversationStateUpdateEvent`, `SystemPromptEvent`, `AgentErrorEvent`,
-  `Condensation` (context-compaction markers) also appear.
+- `SystemPromptEvent`, `ConversationStateUpdateEvent`, and condensation /
+  compaction markers also appear.
 
-### 2. Flat dump: `/workspace/bash_events/`
+### 2. Flat dump: `.../bash_events/`
 
 Files are named
 `<YYYYMMDDHHMMSSsss>_BashCommand_<command_id>` and the paired
 `<timestamp>_BashOutput_<command_id>_<output_id>`:
 
 - `BashCommand`: `command`, `cwd`, `timeout`, `id`, `timestamp`, `kind`.
-- `BashOutput`: `command_id`, `order`, `exit_code`, `stdout`, `stderr`, `kind`.
+- `BashOutput`: `command_id`, `order`, `exit_code`, `stdout`, `stderr`, `id`,
+  `timestamp`, `kind`.
 
 Join command and output on `id` == `command_id`. This is the fastest way to
 reconstruct "every shell command ever run plus its exit code".
-
-### 3. Legacy format: `/workspace/project/<repo>/context/`
-
-One file per event, named `<16-hex>.json` (no index prefix), with fields
-`id`, `kind`, `source`, `timestamp`, `parent_id`, `content`,
-`reasoning_content`. Kinds include `StreamingDeltaEvent`, `ActionEvent`,
-`ObservationEvent`, `MessageEvent`. Sort by `timestamp` to get order. These
-directories can be **tens of thousands of files** — `ls context/` can fail with
-"Argument list too long"; use Python's `os.listdir` instead.
 
 ## Reading a conversation (reference script)
 
@@ -86,12 +102,12 @@ directories can be **tens of thousands of files** — `ls context/` can fail wit
 import json, os
 
 def load_events(conv_dir):
-    """Yield events of a /workspace/conversations/<id> dir in order."""
+    """Yield events of a .../conversations/<id> dir in chronological order."""
     ev_dir = os.path.join(conv_dir, "events")
     for fn in sorted(os.listdir(ev_dir)):          # zero-padded index => ordered
         p = os.path.join(ev_dir, fn)
-        if os.path.getsize(p) == 0:                # skip in-flight writes
-            continue
+        if not os.path.isfile(p) or os.path.getsize(p) == 0:
+            continue                                # skip lock + in-flight writes
         with open(p) as fh:
             yield json.load(fh)
 
@@ -108,35 +124,36 @@ def conversation_text(conv_dir):
                            if isinstance(b, dict) and b.get("type") == "text")
             lines.append(f"[{src}] {text}")
         elif kind == "ActionEvent":
-            a = e.get("action", {})
+            a = e.get("action", {}) or {}
             if a.get("kind") == "TerminalAction":
                 lines.append(f"[{src}] $ {a.get('command','')}")
-            else:
+            elif a.get("kind"):
                 lines.append(f"[{src}] {a.get('kind')}")
         elif kind == "ObservationEvent":
-            o = e.get("observation", {})
-            if o.get("kind") == "BashObservation":
+            o = e.get("observation", {}) or {}
+            if o.get("kind") == "TerminalObservation":
                 lines.append(f"[result] exit={o.get('exit_code')} "
-                             f"{o.get('content') or o.get('output') or ''}")
+                             f"{o.get('content') or ''}")
     return "\n".join(lines)
 ```
 
 ## Performance rules (these corpora are large)
 
-- `meta.json` and `base_state.json` are hundreds of KB; every event file
-  re-embeds the full system prompt, so a naive full-corpus `json.load` of all
-  ~17k events takes minutes.
+- `base_state.json` can be ~100 KB+, and the **`SystemPromptEvent`**
+  (usually `event-00000-...`) is by far the largest single event file
+  (hundreds of KB, since it embeds the full system prompt + tool schemas).
+  Only that one event is heavy; the rest are a few KB each. So a naive full
+  `json.load` of a whole conversation is cheap, but a full-corpus pass across
+  *many* conversations can still be slow — skip `event-00000-*` when you only
+  need tool calls and messages.
 - To **search**: `grep -rho <pattern> <one-conv>/events/*.json` per
-  conversation is fine; a grep across *all* conversations can exceed the 30s
-  soft timeout — loop per conversation with a `timeout` raised, or sample a
-  subset of conversations.
-- To **count/list** files in legacy `context/` dirs, never use shell globbing
-  (argument-list-too-long); use Python `os.listdir`.
+  conversation is fine; a grep across *all* conversations can exceed the soft
+  timeout — loop per conversation, or sample a subset.
 - To **mine tool-call errors**: grep the event files for
   `Error validating tool` / `Cannot execute multiple commands` and normalize
   the message — that is how the `terminal-action` skill was produced.
-- Write intermediate results to `/tmp`, not into the repo's git-ignored
-  `context/` directory, unless the repo convention for that repo says otherwise.
+- Write intermediate results to `/tmp`, not into the repo or the state
+  volume.
 
 ## Secrets — read carefully
 
@@ -146,8 +163,7 @@ contain secrets that were echoed into commands. When processing conversations:
 - Select the fields you need (`title`, `initial_message`, event `kind`,
   `action.command`); **do not dump whole `meta.json` or whole event files**
   to logs or into generated artifacts.
-- Never write conversation contents (or `context/` exports) into files that
-  get committed — `context/` is git-ignored for a reason.
+- Never write conversation contents into files that get committed.
 - Mask anything that looks like a token (`tvly-`, `ghp_`, `hf_`, bearer
   headers) before quoting in PR descriptions, skill files, or reports.
 
@@ -155,6 +171,6 @@ contain secrets that were echoed into commands. When processing conversations:
 
 - **Mine failure patterns** (e.g. tool validation errors) across all
   conversations to write process skills.
-- **Rebuild a transcript** of a past session for debugging or PR description.
+- **Rebuild a transcript** of a past session for debugging or a PR description.
 - **Answer "what did we try before?"** by grepping event `command` fields for
   a keyword instead of re-running experiments.

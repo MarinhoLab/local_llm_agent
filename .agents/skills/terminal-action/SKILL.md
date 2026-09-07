@@ -32,7 +32,7 @@ The tool accepts **only** these keys:
 |---|---|---|---|
 | `command` | string | yes | The shell command(s). Use `&&` or `;` to chain. |
 | `summary` | string | no | ~10 words describing the action. This is where your "what am I doing" note goes. |
-| `timeout` | number | no | Seconds. Raise for installs/tests; default soft-timeout is 30s of silence. |
+| `timeout` | number | no | Seconds. Raise for installs/tests; the default soft-timeout pauses after ~10s without new output. |
 | `is_input` | boolean | no | `true` to send to a running process's stdin (empty string to poll, or a control token like `C-c`/`C-d`/`C-z`/`TAB`/`UP`). |
 | `reset` | boolean | no | `true` to start a fresh shell (clears env, cwd, running procs). |
 | `security_risk` | string | no | `UNKNOWN`/`LOW`/`MEDIUM`/`HIGH`. |
@@ -96,8 +96,8 @@ Fix:
 
 ## Long-running and interactive commands
 
-- Soft timeout is 30s without new output. For installs, tests, or known-fixed
-  durations, set `timeout` accordingly (e.g. `timeout: 600`).
+- The soft timeout pauses after ~10s without new output. For installs, tests,
+  or known-fixed durations, set `timeout` accordingly (e.g. `timeout: 600`).
 - If a command hits the soft timeout it returns **exit code `-1`** and is still
   running. From then on, use `is_input: true` to:
   - send an **empty `command`** to poll for more logs, or

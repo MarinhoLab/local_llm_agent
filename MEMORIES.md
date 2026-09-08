@@ -380,3 +380,43 @@ skill.
   `agent_settings_diff.mcp_config` (wholesale replace of the map). The skill's
   "Adding a server" section was rewritten around it.
 
+### 2026-09-08 — Agent Docker: nested daemon → shared host socket
+
+**Symptom:** running Docker inside the Canvas/agent sandbox (the nested
+`sudo dockerd` that `AGENT_CANVAS_PRIVILEGED=true` existed to enable) fails in a
+nested environment. Reproduced here: the sandbox's root `/` is itself `overlayfs`
+(we are a container), so a second `dockerd` inside it dies at
+`POST /containers/create` with
+`failed to mount ... fstype: overlay ... err: invalid argument` — i.e. it cannot
+do **overlay-on-overlay**. Even where it doesn't hard-fail, the nested daemon is
+heavy and fragile (needs `CAP_SYS_ADMIN`, spins up a duplicate Docker network
+stack, and its image state is ephemeral in the container's `/var/lib/docker`).
+
+**Decision:** share the **host** Docker socket with the agent instead of nesting
+a daemon. `agent_canvas/compose.yml` now bind-mounts
+`AGENT_CANVAS_DOCKER_SOCKET` (default `/var/run/docker.sock`) into the container
+at `/var/run/docker.sock` and sets `DOCKER_HOST=unix:///var/run/docker.sock`, so
+the in-container `docker` client drives the host daemon directly.
+
+**Consequences / trade-offs:**
+
+- The agent no longer runs `dockerd` and no longer needs `CAP_SYS_ADMIN`, so
+  `AGENT_CANVAS_PRIVILEGED` now **defaults to `false`** — the "container is the
+  sandbox boundary" posture is restored by default. The flag is kept as the
+  documented **nested-daemon fallback** (host has no daemon, or you want the
+  agent's containers isolated from the host daemon).
+- Security trade-off (accepted for this single-user, small-agent-count box): with
+  the socket shared, an agent that escapes its process sandbox can run arbitrary
+  containers on the **host** daemon. The old nested-daemon setup kept the agent's
+  containers on a throwaway daemon, but the nested daemon was unreliable in nested
+  environments (this very bug). The README documents this and the escape hatch
+  (remove the socket line + `AGENT_CANVAS_PRIVILEGED=true`).
+- The default socket path works on Linux and Docker Desktop (macOS/Windows);
+  override `AGENT_CANVAS_DOCKER_SOCKET` for non-standard paths (e.g.
+  `//./pipe/dockerDesktopLinuxContainers` on Windows).
+
+**Verification:** `sudo docker compose -f agent_canvas/compose.yml config`
+renders cleanly with `DOCKER_HOST` set, the `/var/run/docker.sock` bind, and no
+`privileged` key (unprivileged default). Docs kept in sync: README env-var table
++ prose, AGENTS.md stack description, and the `docker-usage` skill (now leads
+with the shared socket; nested daemon demoted to a clearly-labelled fallback).

@@ -80,21 +80,31 @@ docker compose up -d
 
 ### Environment Variables
 
-| Variable                  | Default             | Description                                                                                                                                                                       |
-|---------------------------|---------------------|-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| `RETIRED_STACK_PORT`       | `8010`              | Host port for the Canvas ingress (avoids 8000, the vLLM SSH tunnel)                                                                                                               |
-| `RETIRED_STACK_TAG`        | `latest`            | `ghcr.io/the retired client/retired-stack` image tag; pin for reproducibility                                                                                                               |
-| `RETIRED_STACK_STATE`      | `./the retired client-state` | Host dir mounted at `/home/the retired client/.the retired client` (settings, LLM profile, API key, conversations)                                                                                  |
-| `PROJECTS_DIR`            | `./projects`        | Host dir mounted at `/projects` — the project files canvas agents may work in                                                                                                     |
-| `RETIRED_STACK_PRIVILEGED` | `true`              | Run the container with `--privileged` so the in-container Docker can pull images. Set to `false` to restore the stricter sandbox boundary (and give up in-container docker pulls) |
-| `LOCAL_BACKEND_API_KEY`   | *(auto-generated)*  | API key for the retired-server API; auto-persisted, required only in `--public` mode                                                                                                |
-| `OH_SECRET_KEY`           | *(auto-generated)*  | Secret protecting stored settings and secrets                                                                                                                                     |
-| `OH_AGENT_SERVER_VERSION` | *(unset)*           | Pin a specific retired-server version                                                                                                                                               |
+| Variable                     | Default                | Description                                                                                                                                                   |
+|------------------------------|------------------------|---------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| `RETIRED_STACK_PORT`          | `8010`                 | Host port for the Canvas ingress (avoids 8000, the vLLM SSH tunnel)                                                                                           |
+| `RETIRED_STACK_TAG`           | `latest`               | `ghcr.io/the retired client/retired-stack` image tag; pin for reproducibility                                                                                           |
+| `RETIRED_STACK_STATE`         | `./the retired client-state`    | Host dir mounted at `/home/the retired client/.the retired client` (settings, LLM profile, API key, conversations)                                                              |
+| `PROJECTS_DIR`               | `./projects`           | Host dir mounted at `/projects` — the project files canvas agents may work in                                                                                 |
+| `RETIRED_STACK_DOCKER_SOCKET` | `/var/run/docker.sock` | Host Docker socket bind-mounted into the container, so agents drive the host daemon (no nested `dockerd`). Override for non-standard socket paths             |
+| `RETIRED_STACK_PRIVILEGED`    | `false`                | Off: agents use the shared host socket. Set to `true` only to let an agent run its own nested `dockerd` (needs `CAP_SYS_ADMIN`; weakens the sandbox boundary) |
+| `LOCAL_BACKEND_API_KEY`      | *(auto-generated)*     | API key for the retired-server API; auto-persisted, required only in `--public` mode                                                                            |
+| `OH_SECRET_KEY`              | *(auto-generated)*     | Secret protecting stored settings and secrets                                                                                                                 |
+| `OH_AGENT_SERVER_VERSION`    | *(unset)*              | Pin a specific retired-server version                                                                                                                           |
 
-The container runs `--privileged` by default so canvas agents can start a
-Docker daemon and `docker pull` images (extracting image layers needs
-`CAP_SYS_ADMIN`, which the default unprivileged set lacks). Trade-off: a
-privileged container weakens the "canvas agents are untrusted, the container
-is the sandbox boundary" posture. Set `RETIRED_STACK_PRIVILEGED=false` in
-`.env` to restore that boundary — in-container docker pulls then stop working.
-Either way the service still gets no `docker.sock` and no GPUs.
+Canvas agents drive the **host** Docker daemon by default: the host socket is
+bind-mounted into the container (`RETIRED_STACK_DOCKER_SOCKET`) and
+`DOCKER_HOST` points the in-container client at it, so no nested `dockerd` is
+needed. This avoids the docker-in-docker problems — overlay-on-overlay mount
+failures, image-layer extraction requiring `CAP_SYS_ADMIN`, a duplicate network
+stack — and it also means the container no longer needs `--privileged`
+(`RETIRED_STACK_PRIVILEGED` defaults to `false`). Set it to `true` only if an
+agent should run its **own** nested `dockerd` (e.g. the host has no daemon, or
+you want the agent's containers isolated from the host daemon).
+
+Trade-off to be aware of: sharing the socket means an agent that escapes its
+process sandbox can run arbitrary containers on the host daemon — a weaker
+boundary than the nested-daemon setup, which at least kept the agent's
+containers on a throwaway daemon. If that is unacceptable for your setup,
+remove the socket line from `compose.yml` and set `RETIRED_STACK_PRIVILEGED=true`.
+No GPUs are exposed either way.

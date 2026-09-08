@@ -29,6 +29,19 @@ services:
       # Project files the canvas agents may work in. Container-side boundary:
       # agents can only touch what is mounted.
       - ${PROJECTS_DIR:-./projects}:/projects
+      # Share the HOST Docker daemon with the agent: the host socket is
+      # bind-mounted at /var/run/docker.sock and DOCKER_HOST (see environment)
+      # points the in-container client at it. The agent talks to the host
+      # daemon directly instead of running a nested `dockerd`, which avoids the
+      # docker-in-docker problems (overlay-on-overlay mount failures, image
+      # layer extraction needing CAP_SYS_ADMIN, a duplicate network stack).
+      # The default path exists on Linux and on Docker Desktop (macOS/Windows);
+      # override AGENT_CANVAS_DOCKER_SOCKET in .env if your socket lives
+      # elsewhere (e.g. //./pipe/dockerDesktopLinuxContainers on Windows).
+      # If your host has no Docker daemon, remove this line — the agent then
+      # has no Docker unless it runs its own nested daemon
+      # (AGENT_CANVAS_PRIVILEGED=true).
+      - ${AGENT_CANVAS_DOCKER_SOCKET:-/var/run/docker.sock}:/var/run/docker.sock
 
     # Lets the backend reach host-published services through the tunnel —
     # i.e. the Spark's vLLM at http://host.docker.internal:8000/v1 (Settings
@@ -36,16 +49,21 @@ services:
     extra_hosts:
       - "host.docker.internal:host-gateway"
 
-    # Privileged (default on) so in-container Docker can pull images: the
-    # OpenHands sandbox runs a nested Docker daemon, and extracting image
-    # layers needs CAP_SYS_ADMIN to mount/unshare them — the default
-    # unprivileged capability set lacks it (pulls then fail with
-    # "operation not permitted" at layer extraction). Trade-off: a privileged
-    # container weakens the "canvas agents are untrusted, the container is the
-    # sandbox boundary" posture — an agent that escapes the process sandbox
-    # reaches the host. Set AGENT_CANVAS_PRIVILEGED=false to restore that
-    # boundary and give up in-container docker pulls. Still no docker.sock or
-    # gpus are exposed either way.
-    privileged: ${AGENT_CANVAS_PRIVILEGED:-true}
+    # Point the in-container Docker client at the mounted host socket so
+    # `docker` (and `sudo docker`) talks to the HOST daemon instead of a local
+    # one the agent would otherwise start with a nested `dockerd`.
+    environment:
+      DOCKER_HOST: unix:///var/run/docker.sock
+
+    # Not privileged by default: with the host socket shared, the agent runs
+    # the host daemon directly and needs no CAP_SYS_ADMIN, so the stricter
+    # "canvas agents are untrusted, the container is the sandbox boundary"
+    # posture is restored. Set AGENT_CANVAS_PRIVILEGED=true only if the agent
+    # should run its OWN nested `dockerd` (e.g. the host has no Docker daemon,
+    # or you deliberately want the agent's containers isolated from the host
+    # daemon) — that path needs CAP_SYS_ADMIN to extract image layers and
+    # weakens the sandbox boundary (an escaping agent reaches the host).
+    # No GPUs are exposed either way.
+    privileged: ${AGENT_CANVAS_PRIVILEGED:-false}
 
     restart: unless-stopped

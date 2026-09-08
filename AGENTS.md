@@ -13,11 +13,12 @@ Two self-contained stacks:
   model at `:8000/v1` on the Spark.
 - `agent_canvas/` — [Agent Canvas](https://docs.openhands.dev/openhands/usage/agent-canvas/setup)
   all-in-one image (UI + agent-server + automation server + ingress) on macOS, also
-  reaching vLLM through the tunnel; UI at `http://localhost:8010/canvas`. No
-  `docker.sock`, no GPUs. Runs `--privileged` by default
-  (`AGENT_CANVAS_PRIVILEGED=true`) so the in-container Docker can pull images;
-  set it to `false` to restore the "canvas agents are untrusted, the container
-  is the sandbox boundary" posture (in-container docker pulls then stop working).
+  reaching vLLM through the tunnel; UI at `http://localhost:8010/canvas`. Shares the
+  **host** Docker socket (`AGENT_CANVAS_DOCKER_SOCKET`, default
+  `/var/run/docker.sock`) so canvas agents drive the host daemon directly — no nested
+  `dockerd`, no `--privileged` (`AGENT_CANVAS_PRIVILEGED` defaults to `false`). Set
+  `AGENT_CANVAS_PRIVILEGED=true` and remove the socket line only if an agent should run
+  its own nested daemon. No GPUs.
 
 ## Deployment constraints (do not change without a reason)
 

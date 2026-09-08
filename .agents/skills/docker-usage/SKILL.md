@@ -218,3 +218,11 @@ docker exec -it agent-canvas bash
   `extra_hosts: host.docker.internal:host-gateway` mapping, or the SSH tunnel
   is down. `host.docker.internal` resolves to the Mac, so LLM/MCP URLs must go
   through the tunnel at `http://host.docker.internal:8000/v1`.
+- **Agent's `docker` can't reach a daemon** — by default the container's
+  `docker` targets the **host** daemon through the bind-mounted
+  `AGENT_CANVAS_DOCKER_SOCKET` (see "Docker in the Canvas container"). If it
+  errors with `Cannot connect to the Docker daemon` / `no such file or
+  directory`, either the host has no running daemon, `AGENT_CANVAS_DOCKER_SOCKET`
+  points at the wrong path (override in `.env` for non-standard locations), or
+  you removed the socket line without setting `AGENT_CANVAS_PRIVILEGED=true`
+  (so there is no daemon at all).

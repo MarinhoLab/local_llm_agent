@@ -1,13 +1,6 @@
 # Dockerfile
 # DGX Spark local LLM server using vLLM OpenAI-compatible API.
 #
-# vLLM v0.28.0 (2026-08-26) was the current `latest` tag when this was pinned.
-# Pin a specific version instead of `latest`: Qwen3.8 needs the qwen3_5
-# hybrid-attention support and Qwen MTP/fused-GDN fixes that landed in
-# v0.27/v0.28, and `latest` silently drifts on every rebuild. The -ubuntu2404
-# variant is multi-arch (arm64 for the GB10). Bump deliberately when a newer
-# vLLM release is tested.
-
 FROM vllm/vllm-openai:v0.28.0-ubuntu2404
 
 ENV DEBIAN_FRONTEND=noninteractive
@@ -25,10 +18,14 @@ ENV SERVED_MODEL_NAME=qwen-local
 ENV HF_HOME=/root/.cache/huggingface
 ENV TRANSFORMERS_CACHE=/root/.cache/huggingface
 ENV HF_XET_HIGH_PERFORMANCE=1
+ENV SPEC_METHOD=mtp
+ENV NUM_SPEC_TOKENS=3
 
 RUN apt-get update && apt-get install -y --no-install-recommends     git     curl     ca-certificates     && rm -rf /var/lib/apt/lists/*
 
-RUN pip install --no-cache-dir -U huggingface_hub
+RUN pip install --no-cache-dir --upgrade \
+    huggingface_hub \
+    "transformers>=5.8.0"
 
 COPY entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh

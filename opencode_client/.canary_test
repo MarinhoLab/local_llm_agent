@@ -1,0 +1,7 @@
+L1="def"
+L2="\def"
+L3='def'
+L4="${X}"
+L5="${Y:=def}"
+L6=def
+L7="${1:-qwen-local}"

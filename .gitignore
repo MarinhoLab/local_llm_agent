@@ -4,3 +4,15 @@ context/
 # agent_canvas runtime data (kept on the Mac host, never committed)
 agent_canvas/openhands-state/
 agent_canvas/projects/
+
+# opencode_client secrets and generated configuration (see opencode_client/)
+opencode_client/.env
+opencode_client/auth.json
+opencode_client/opencode.json
+
+# OpenCode local state and caches (project-level .opencode/ if any)
+.opencode/
+**/.opencode/
+
+# Long-task logs and transient artifacts (see opencode_client/AGENTS.md)
+artifacts/logs/

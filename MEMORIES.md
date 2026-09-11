@@ -6,8 +6,13 @@
 > removed work and is kept only as history. The one piece that remains
 > directly useful is the **verified OpenHands V1 REST API surface** (settings
 > store, profiles, MCP registration) under
-> [Investigation log](#investigation-log) — that API is still how the
-> `agent_canvas` stack configures its LLM profile and MCP servers.
+> [Investigation log](#investigation-log) — that API is still how the Agent
+> Canvas stack configures its LLM profile and MCP servers.
+>
+> **Note (2026-09): the Docker-based `agent_canvas/` stack has also been
+> removed**, in favor of `agent_canvas_native/` (no Docker). The 2026-09-08
+> entry about sharing the host Docker socket with `agent_canvas/compose.yml`
+> now describes a retired stack and is kept only as history.
 
 A persistent, append-friendly record of **what we tried, what worked, and why**
 for this repo. New findings are appended to

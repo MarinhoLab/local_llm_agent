@@ -8,9 +8,6 @@ There is **no Docker** involved.
 
 This is the npm-based install path documented at
 [OpenHands · Running Agent Canvas](https://docs.openhands.dev/openhands/usage/agent-canvas/setup).
-It is the equivalent of the [`agent_canvas/`](../agent_canvas/) Docker stack
-([OpenHands · Running Agent Canvas with Docker](https://docs.openhands.dev/openhands/usage/agent-canvas/setup#running-agent-canvas-with-docker)),
-just without the container boundary.
 
 ## What's here
 
@@ -22,11 +19,6 @@ agent_canvas_native/
 ├── example.env    # configuration template (copied to .env by install.sh)
 └── openhands-state/   # agent-server state — git-ignored (created at first run)
 ```
-
-> **Why a separate folder?** `agent_canvas/` runs the same stack as a Docker
-> Compose deployment on a port-8010 tunnel. `agent_canvas_native/` runs it as a
-> local process. You can run **both** side by side — they only collide if they
-> share a port or a state dir.
 
 ## Prerequisites
 
@@ -81,14 +73,14 @@ The LLM is configured in the UI, not by environment variables:
 `run.sh` does a non-fatal preflight `curl` of the vLLM endpoint before launch.
 If it can't reach it you'll see a hint with the SSH tunnel to start first —
 the Canvas itself starts fine without the model; you just add the profile
-once the tunnel is up. See the [`agent_canvas/` section of the repo
-README](../README.md) for the tunnel command and model selection.
+once the tunnel is up. Start the tunnel with
+`ssh -L 8000:localhost:8000 USER@DGX_SPARK_IP`.
 
 ## Ports
 
 The internal ports (`18000`/`18001`) are **fixed** defaults and do *not* move
 with the ingress port, so pick an ingress port that doesn't collide with the
-repo's other stacks (8000 vLLM, 8010 Docker Canvas):
+repo's other stack (8000 vLLM):
 
 | Service | Port (native default) | Notes |
 |---|---|---|
@@ -96,7 +88,6 @@ repo's other stacks (8000 vLLM, 8010 Docker Canvas):
 | agent-server | `18000` | internal; proxied at `/api`, `/server_info`, etc. |
 | automation server | `18001` | internal; proxied at `/api/automation` |
 | **vLLM (SSH tunnel)** | `8000` | the model endpoint — a *separate* tunnel, not part of this stack |
-| Docker Agent Canvas | `8010` | the *other* stack in `agent_canvas/` — left alone |
 
 Pick a different ingress port with `AGENT_CANVAS_PORT=8030 ./run.sh`. If your
 machine is already using the internal ports (a second Canvas stack, or a
@@ -130,8 +121,7 @@ agents open terminals.)
 and pins the **session API key** (`api-key.txt`, used as `X-Session-API-Key`)
 and the **encryption secret key** (`secret-key.txt`) here. They live in `$HOME`
 deliberately, *independent of the state dir*, so they stay stable across
-restarts and so the Docker and native stacks share the same keys when both use
-`~/.openhands`. To rotate a key, delete that file (and restart). Set
+restarts. To rotate a key, delete that file (and restart). Set
 `LOCAL_BACKEND_API_KEY` to pin the API key explicitly instead.
 
 **3. `~/.openhands/`** — your saved **LLM profile and agent settings**:
@@ -141,26 +131,13 @@ you add in Settings → LLM). These live in `$HOME` regardless of the state dir.
 So: conversations and workspaces follow `AGENT_CANVAS_STATE`; the API key,
 encryption key, and your LLM profile live in `~/.openhands`.
 
-One difference from the Docker stack: there is **no fixed `/projects` mount**.
-In Docker mode a host `projects/` dir is bind-mounted to `/projects` and agents
-start there by default. Native mode has no such mount — when you create a
-conversation you just pick a host path to work in (a checked-out repo, a new
-folder, etc.) and the agent edits it in place with your user's permissions.
+## Working with your files
 
-## Comparison with the Docker stack
-
-| | `agent_canvas/` (Docker) | `agent_canvas_native/` (this) |
-|---|---|---|
-| Runs on | Docker Desktop | Node.js + uv, local process |
-| Port | `8010` (tunnel) | `8020` (local) |
-| Requires | Docker + the image built | Node ≥ 22.12 + uv |
-| Filesystem | agents are sandboxed in the container | agents run as your user, full local FS |
-| State | `~/.openhands/agent-canvas` (volume-mounted) | `./openhands-state` |
-| Setup | `docker compose build && up` | `./install.sh` then `./run.sh` |
-
-Use the Docker stack when you want the agent sandboxed; use this native one
-when you want zero Docker overhead, or to develop against the local
-environment directly.
+There is **no fixed `/projects` mount**: agents run as your user with the same
+filesystem access your account has (there is no container boundary). When you
+create a conversation you just pick a host path to work in (a checked-out
+repo, a new folder, etc.) and the agent edits it in place with your
+permissions.
 
 ## Troubleshooting
 

@@ -6,7 +6,7 @@ description: >-
   how to read them, and safe, fast patterns for mining/processing them without
   leaking secrets or melting the machine.
 license: MIT
-compatibility: Linux Agent Canvas sandbox (state volume at /home/openhands/.openhands)
+compatibility: Agent Canvas runtime state (native stack: `~/.openhands` + `agent_canvas_native/openhands-state/`)
 triggers:
   - conversations
   - conversation history
@@ -16,10 +16,11 @@ triggers:
   - where are conversations
 ---
 
-OpenHands conversation data lives in the Agent Canvas **state volume**, mounted
-at `/home/openhands/.openhands` (host dir `agent_canvas/openhands-state`). The
-live runtime data sits under the `agent-canvas/` subdirectory of that volume.
-There are **two on-disk formats** to be aware of.
+OpenHands conversation data lives in the Agent Canvas **state**, at
+`~/.openhands` (for the native stack, per-conversation runtime data also sits
+in `agent_canvas_native/openhands-state/`). The live runtime data sits under
+the `agent-canvas/` subdirectory. There are **two on-disk formats** to be
+aware of.
 
 ## Where things are
 

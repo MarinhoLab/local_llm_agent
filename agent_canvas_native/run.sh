@@ -87,7 +87,7 @@ fi
 if (( PORT_IN_USE )); then
   echo "WARNING: port ${AGENT_CANVAS_PORT} is already in use." >&2
   echo "  Choose another:  AGENT_CANVAS_PORT=8030 ./agent_canvas_native/run.sh" >&2
-  echo "  (8000 = vLLM tunnel, 8010 = the Docker Agent Canvas stack, 8020 = this stack's default.)" >&2
+  echo "  (8000 = vLLM tunnel, 8020 = this stack's default.)" >&2
   exit 1
 fi
 

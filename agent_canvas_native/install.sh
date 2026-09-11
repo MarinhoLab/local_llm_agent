@@ -3,10 +3,9 @@
 # install.sh — one-time setup for the *native* Agent Canvas stack (no Docker).
 #
 # This is the "npm" install path from
-# https://docs.openhands.dev/openhands/usage/agent-canvas/setup — the same
-# all-in-one stack the `agent_canvas/` Docker image bundles (UI + agent-server
-# + automation server + ingress), but run as a local process on your machine
-# instead of in a container.
+# https://docs.openhands.dev/openhands/usage/agent-canvas/setup — it runs the
+# whole all-in-one stack (UI + agent-server + automation server + ingress)
+# as a local process on your machine, with no Docker.
 #
 # Steps:
 #   1. verify prerequisites: Node.js >= 22.12, npm, uv (the agent-server and

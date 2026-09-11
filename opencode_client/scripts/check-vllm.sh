@@ -20,12 +20,13 @@ CLIENT_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
 # shellcheck disable=SC1091  # lib path is computed at runtime
 source "${SCRIPT_DIR}/lib_vllm.sh"
 
-# Load .env if present (defaults are already set by the lib).
+# Load .env if present (defaults are already set by the lib; existing
+# environment variables take precedence over .env).
 if [[ -f "${CLIENT_DIR}/.env" ]]; then
-  # shellcheck disable=SC1090,SC1091  # .env is git-ignored / runtime
-  source "${CLIENT_DIR}/.env"
+  vllm_load_env "${CLIENT_DIR}/.env"
 fi
-MODEL_ID="qwen-local"
+# OPENCODE_MODEL_ID defaults to qwen-local in the lib; .env can override it.
+MODEL_ID="${OPENCODE_MODEL_ID}"
 
 echo "== check-vllm =="
 echo "base url : ${OPENCODE_BASE_URL}"

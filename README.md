@@ -1,7 +1,8 @@
 # Local LLM Agent
 
 Run a Qwen model on a DGX Spark and connect to it from macOS using
-[Agent Canvas](https://docs.openhands.dev/openhands/usage/agent-canvas/setup).
+[Agent Canvas](https://docs.openhands.dev/openhands/usage/agent-canvas/setup)
+(Docker) or [OpenCode](https://opencode.ai) (terminal client, no Docker).
 
 ## `dgx_spark_host/`
 
@@ -135,3 +136,60 @@ run as your user on the local filesystem).
 
 Needs Node.js ≥ 22.12 and `uv`. Ports, overrides, and troubleshooting are
 documented in [`agent_canvas_native/README.md`](agent_canvas_native/README.md).
+
+## `opencode_client/`
+
+Drive the same `qwen-local` model from a plain terminal with
+[OpenCode](https://opencode.ai) — no Docker required. Works on macOS (behind
+the SSH tunnel) or directly on the DGX Spark (no tunnel, use `OPENCODE_BASE_URL=http://127.0.0.1:8000/v1`).
+
+### Setup (once)
+
+```bash
+cd opencode_client
+cp example.env .env        # then edit .env if the defaults do not fit
+./scripts/install-opencode.sh
+```
+
+`install-opencode.sh` installs the OpenCode binary (official installer into
+`~/.opencode/bin`, or `npm install -g opencode-ai` with `OPENCODE_INSTALL=npm`)
+and generates, from `.env`:
+
+- the provider config at `~/.config/opencode/opencode.json`
+  (`OPENCODE_CONFIG_DIR` to relocate it), and
+- the API key at OpenCode's auth store (`auth.json` in the XDG data dir;
+  `chmod 600`). The key is never written into the tracked config.
+
+### Use
+
+```bash
+./scripts/check-vllm.sh                 # endpoint + model + chat smoke test
+./scripts/launch-opencode.sh ~/git/my_project
+```
+
+`launch-opencode.sh` re-verifies the endpoint (and prints the exact
+`ssh -N -L ...` command if the tunnel is down), then runs
+`opencode -m dgx-vllm/qwen-local` in the given project directory.
+`opencode_client/AGENTS.md` is a template of agent instructions: copy it into
+a target project's root for OpenCode to pick up project-specific rules.
+
+### Environment Variables
+
+| Variable                 | Default                     | Description                                                                     |
+|--------------------------|-----------------------------|---------------------------------------------------------------------------------|
+| `OPENCODE_PROVIDER_ID`   | `dgx-vllm`                  | Provider ID; the key in `opencode.json` and `auth.json` — all three must match   |
+| `OPENCODE_PROVIDER_NAME` | `DGX Spark vLLM`            | Display name in the OpenCode model picker (quote it in `.env` — it is sourced)   |
+| `OPENCODE_MODEL_ID`      | `qwen-local`                | Model ID exactly as vLLM serves it (from `GET /v1/models`)                       |
+| `OPENCODE_MODEL_NAME`    | `Qwen3.8-27B-FP8`           | Model display name in the picker                                                  |
+| `OPENCODE_BASE_URL`      | `http://127.0.0.1:8000/v1`  | vLLM API as reachable from THIS machine (tunnel port is derived from it)         |
+| `OPENCODE_API_KEY`       | `local-dgx-key`             | Must match the vLLM server's `API_KEY`; written to the git-ignored `auth.json`   |
+| `OPENCODE_CONTEXT_LENGTH`| `262144`                    | Model context window in tokens                                                    |
+| `OPENCODE_OUTPUT_LENGTH` | `16384`                     | Max output tokens                                                                 |
+| `OPENCODE_REQUEST_TIMEOUT` | `120`                     | Per-request curl timeout in seconds for the checks                                |
+| `OPENCODE_VERSION`       | *(unset)*                   | Pin an OpenCode release for the installer; unset = latest                         |
+| `OPENCODE_INSTALL`       | `official`                  | `official` (default) or `npm`                                                     |
+| `OPENCODE_CONFIG_DIR`    | `~/.config/opencode`        | Where the generated `opencode.json` goes (global OpenCode config dir)             |
+
+Generated files (`.env`, `opencode.json`, `auth.json` next to the config) are
+git-ignored; only `example.env`, `opencode.example.json`, and
+`auth.example.json` are tracked as templates.

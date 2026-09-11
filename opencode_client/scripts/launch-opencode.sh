@@ -26,14 +26,10 @@ CLIENT_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
 source "${SCRIPT_DIR}/lib_vllm.sh"
 
 if [[ -f "${CLIENT_DIR}/.env" ]]; then
-  # shellcheck disable=SC1090,SC1091  # .env is git-ignored / runtime
-  source "${CLIENT_DIR}/.env"
+  vllm_load_env "${CLIENT_DIR}/.env"
 fi
-: "${OPENCODE_PROVIDER_ID:=dgx-vllm}"
-: "${OPENCODE_MODEL_ID:=qwen-local}"
 MODEL_REF="${OPENCODE_PROVIDER_ID}/${OPENCODE_MODEL_ID}"
-TUNNEL_PORT="$(printf '%s' "${OPENCODE_BASE_URL}" | sed -n 's#.*/:\([0-9]\{1,5\}\).*$#\1#p')"
-TUNNEL_PORT="8000"
+TUNNEL_PORT="$(vllm_tunnel_port)"
 
 echo "== launch-opencode =="
 echo "model : ${MODEL_REF}"
@@ -76,7 +72,9 @@ resolve_opencode() {
   if command -v opencode >/dev/null 2>&1; then
     command -v opencode
   elif [[ -x "${HOME}/.opencode/bin/opencode" ]]; then
-    "${HOME}/.opencode/bin/opencode"
+    # Print the path (do NOT execute it — the result is captured by
+    # command substitution in the caller).
+    printf '%s\n' "${HOME}/.opencode/bin/opencode"
   fi
 }
 OC_BIN="$(resolve_opencode || true)"

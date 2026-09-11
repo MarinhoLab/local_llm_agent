@@ -33,15 +33,13 @@ if [[ -f "${CLIENT_DIR}/.env" ]]; then
 fi
 
 CONFIG_DIR="${OPENCODE_CONFIG_DIR:-${HOME}/.config/opencode}"
-# OpenCode keeps auth.json in the XDG data dir, mirroring the config dir's
-# platform layout (Linux: ~/.local/share, macOS: ~/Library/Application Support).
-DATA_DIR="${OPENCODE_DATA_DIR:-}"
-if [[ -z "${DATA_DIR}" ]]; then
-  case "$(uname -s)" in
-    Darwin) DATA_DIR="${HOME}/Library/Application Support/opencode" ;;
-    *)      DATA_DIR="${HOME}/.local/share/opencode" ;;
-  esac
-fi
+# OpenCode keeps auth.json in its *data* dir, which it resolves via the
+# xdg-basedir package on EVERY platform — including macOS — so it is always
+# $XDG_DATA_HOME/opencode, or ~/.local/share/opencode when XDG_DATA_HOME is
+# unset. It is NOT the macOS "Application Support" convention, so do not branch
+# on the OS here (that made the key invisible to OpenCode and every prompt fail
+# with 401 unauthorized). OPENCODE_DATA_DIR still wins as an override.
+DATA_DIR="${OPENCODE_DATA_DIR:-${XDG_DATA_HOME:-${HOME}/.local/share}/opencode}"
 
 echo "== install-opencode =="
 echo "provider: ${OPENCODE_PROVIDER_ID}  (${OPENCODE_PROVIDER_NAME})"

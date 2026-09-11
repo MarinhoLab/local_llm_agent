@@ -108,3 +108,30 @@ boundary than the nested-daemon setup, which at least kept the agent's
 containers on a throwaway daemon. If that is unacceptable for your setup,
 remove the socket line from `compose.yml` and set `AGENT_CANVAS_PRIVILEGED=true`.
 No GPUs are exposed either way.
+
+## `agent_canvas_native/`
+
+The same Agent Canvas stack — but **native**: UI + agent-server + automation
+server + ingress run as local processes via Node.js and uv, with **no Docker**.
+Same model, same LLM-profile setup, just without the container sandbox (agents
+run as your user on the local filesystem).
+
+### Run
+
+```bash
+./agent_canvas_native/install.sh   # one-time (upgrades on re-run)
+./agent_canvas_native/run.sh
+```
+
+- Address `http://localhost:8020` (avoids 8000, the vLLM tunnel, and 8010, the Docker stack).
+- LLM profile: Settings → LLM, provider **OpenAI-compatible**, base `http://localhost:8000/v1`, key `local-dgx-key`, model `Qwen/Qwen3.8-27B-FP8` (or the `qwen-local` alias).
+
+| Variable             | Default                | Description                                                                 |
+|----------------------|------------------------|-----------------------------------------------------------------------------|
+| `AGENT_CANVAS_PORT`  | `8020`                 | Ingress (UI + proxied API) port                                              |
+| `AGENT_CANVAS_STATE` | `./openhands-state`    | Where agent-server keeps per-conversation runtime state (conversations, workspaces, terminal history, logs). API key + LLM profile live in `~/.openhands`. |
+| `VLLM_BASE_URL`      | `http://localhost:8000/v1` | Endpoint `run.sh` checks before launch (the value for the LLM profile)   |
+| `VLLM_API_KEY`       | `local-dgx-key`        | API key for the vLLM preflight check                                       |
+
+Needs Node.js ≥ 22.12 and `uv`. Ports, overrides, and troubleshooting are
+documented in [`agent_canvas_native/README.md`](agent_canvas_native/README.md).

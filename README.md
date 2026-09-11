@@ -108,3 +108,30 @@ boundary than the nested-daemon setup, which at least kept the agent's
 containers on a throwaway daemon. If that is unacceptable for your setup,
 remove the socket line from `compose.yml` and set `RETIRED_STACK_PRIVILEGED=true`.
 No GPUs are exposed either way.
+
+## `retired-stack/`
+
+The same the retired client stack — but **native**: UI + retired-server + automation
+server + ingress run as local processes via Node.js and uv, with **no Docker**.
+Same model, same LLM-profile setup, just without the container sandbox (agents
+run as your user on the local filesystem).
+
+### Run
+
+```bash
+./retired-stack/install.sh   # one-time (upgrades on re-run)
+./retired-stack/run.sh
+```
+
+- Address `http://localhost:8020` (avoids 8000, the vLLM tunnel, and 8010, the Docker stack).
+- LLM profile: Settings → LLM, provider **OpenAI-compatible**, base `http://localhost:8000/v1`, key `local-dgx-key`, model `Qwen/Qwen3.8-27B-FP8` (or the `qwen-local` alias).
+
+| Variable             | Default                | Description                                                                 |
+|----------------------|------------------------|-----------------------------------------------------------------------------|
+| `RETIRED_STACK_PORT`  | `8020`                 | Ingress (UI + proxied API) port                                              |
+| `RETIRED_STACK_STATE` | `./the retired client-state`    | Where retired-server keeps per-conversation runtime state (conversations, workspaces, terminal history, logs). API key + LLM profile live in `~/.the retired client`. |
+| `VLLM_BASE_URL`      | `http://localhost:8000/v1` | Endpoint `run.sh` checks before launch (the value for the LLM profile)   |
+| `VLLM_API_KEY`       | `local-dgx-key`        | API key for the vLLM preflight check                                       |
+
+Needs Node.js ≥ 22.12 and `uv`. Ports, overrides, and troubleshooting are
+documented in [`retired-stack/README.md`](retired-stack/README.md).

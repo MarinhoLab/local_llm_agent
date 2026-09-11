@@ -7,22 +7,15 @@ Guidance for AI agents (and humans) working in this repository.
 `local_llm_agent` runs **Qwen3.8-27B (FP8, official `Qwen/Qwen3.8-27B-FP8`)** on an **NVIDIA DGX Spark** (GB10, 128 GB unified memory, aarch64) via vLLM, and drives it from **macOS** through **OpenHands**
 over an SSH tunnel (or a plain terminal via **OpenCode**).
 
-Four self-contained stacks:
+Three self-contained stacks:
 
 - `dgx_spark_host/` — vLLM server (Docker image + compose + entrypoint). Serves the
   model at `:8000/v1` on the Spark.
-- `agent_canvas/` — [Agent Canvas](https://docs.openhands.dev/openhands/usage/agent-canvas/setup)
-  all-in-one image (UI + agent-server + automation server + ingress) on macOS, also
-  reaching vLLM through the tunnel; UI at `http://localhost:8010/canvas`. Shares the
-  **host** Docker socket (`AGENT_CANVAS_DOCKER_SOCKET`, default
-  `/var/run/docker.sock`) so canvas agents drive the host daemon directly — no nested
-  `dockerd`, no `--privileged` (`AGENT_CANVAS_PRIVILEGED` defaults to `false`). Set
-  `AGENT_CANVAS_PRIVILEGED=true` and remove the socket line only if an agent should run
-  its own nested daemon. No GPUs.
-- `agent_canvas_native/` — the same Agent Canvas stack (UI + agent-server + automation
-  server + ingress) running as local processes via Node.js ≥ 22.12 and `uv`, with **no
-  Docker**; UI at `http://localhost:8020`. See `agent_canvas_native/README.md` for ports
-  and overrides.
+- `agent_canvas_native/` — [Agent Canvas](https://docs.openhands.dev/openhands/usage/agent-canvas/setup)
+  (UI + agent-server + automation server + ingress) running as local processes via
+  Node.js ≥ 22.12 and `uv`, with **no Docker**; also reaches vLLM through the
+  tunnel; UI at `http://localhost:8020`. Agents run as your user on the local
+  filesystem. See `agent_canvas_native/README.md` for ports and overrides.
 - `opencode_client/` — [OpenCode](https://opencode.ai) terminal client (no Docker) that
   connects to the same `qwen-local` model. `scripts/install-opencode.sh` installs the
   binary and generates the provider `opencode.json` + `auth.json` from `opencode_client/.env`;
@@ -77,24 +70,17 @@ Four self-contained stacks:
   to 1,048,576 via YaRN (factor 4.0, must land in `text_config.rope_parameters` and
   include `mrope_*` fields or multimodal RoPE breaks). It is static and costs ~36 GiB
   of KV, so it stays off by default.
-- **OpenHands / Agent Canvas images**: the `agent_canvas` stack uses the
-  all-in-one `ghcr.io/openhands/agent-canvas` image, which bundles the
-  agent-server — there is no separate agent-server image to pin and no
-  `AGENT_SERVER_IMAGE_*` runtime variable (older OpenHands images did; that
-  guidance is retired). `AGENT_CANVAS_TAG=latest` keeps the image current; pin a
-  specific tag before a release if reproducibility matters.
 - **LLM configuration (model, base URL, API key)**: the OpenHands V1 web app
-  does **not** read `LLM_MODEL` / `LLM_BASE_URL` / `LLM_API_KEY` container env
-  vars. It resolves the LLM and MCP servers from its own settings store (GUI:
-  `Settings → LLM` / `Settings → MCP`), persisted in the state volume
-  (`AGENT_CANVAS_STATE`, mounted at `/home/openhands/.openhands`). Those env
+  does **not** read `LLM_MODEL` / `LLM_BASE_URL` / `LLM_API_KEY` env vars. It
+  resolves the LLM and MCP servers from its own settings store (GUI:
+  `Settings → LLM` / `Settings → MCP`), persisted under `~/.openhands`. Those env
   vars are only honored by the V0/CLI path
   (`LLM.load_from_env` + `--override-with-envs`), and the agent-server config
   loader only parses `OH_*` prefixed vars (see `agent_server/config.py`
   `ENVIRONMENT_VARIABLE_PREFIX`). So the LLM profile is set in the Canvas UI
-  (Settings → LLM) or via the V1 REST API — see the `agent_canvas` section of
-  the README for the profile example. Rationale + verified API surface:
-  `MEMORIES.md`.
+  (Settings → LLM) or via the V1 REST API — see the `agent_canvas_native`
+  section of the README for the profile example. Rationale + verified API
+  surface: `MEMORIES.md`.
 - **MCP search servers**: web-search servers (e.g. Tavily, remote
   streamable-http, API key) are registered in OpenHands → Settings → MCP, or via
   the V1 REST API (`POST /api/v1/settings` with
@@ -109,9 +95,8 @@ cd dgx_spark_host
 docker compose -f compose.yml up --build     # first run downloads ~24 GB of weights
 
 # Agent Canvas side (macOS, SSH tunnel first: ssh -N -L 8000:localhost:8000 USER@DGX_SPARK_IP)
-cd agent_canvas
-mkdir -p openhands-state projects
-docker compose up -d          # UI: http://localhost:8010/canvas
+./agent_canvas_native/install.sh   # one-time (upgrades on re-run)
+./agent_canvas_native/run.sh       # UI: http://localhost:8020
 
 # OpenCode terminal client (macOS, SSH tunnel first — same tunnel as Canvas)
 cd opencode_client
@@ -125,7 +110,7 @@ Sanity checks that do not need a GPU:
 
 ```bash
 bash -n dgx_spark_host/entrypoint.sh
-python3 -c "import yaml; yaml.safe_load(open('agent_canvas/compose.yml'))"
+bash -n agent_canvas_native/install.sh agent_canvas_native/run.sh
 # entrypoint dry-run: put a stub `vllm` script in PATH and run entrypoint.sh
 ```
 
@@ -133,15 +118,15 @@ python3 -c "import yaml; yaml.safe_load(open('agent_canvas/compose.yml'))"
 
 - `.env` files are local-only and hold secrets (`HF_TOKEN`) — they are
   git-ignored. `dgx_spark_host/` reads `HF_CACHE`/`HF_TOKEN` from `.env` when
-  present (compose defaults work without it). `agent_canvas/example.env` is the
-  Canvas stack's tracked template — copy it to `.env`.
+  present (compose defaults work without it). `agent_canvas_native/example.env`
+  is the native Canvas stack's tracked template — `install.sh` copies it to
+  `.env`.
 - `context/` holds exported OpenHands conversation events and is git-ignored —
   never commit it.
-- `agent_canvas/openhands-state/` and `agent_canvas/projects/` are runtime
-  mounts (state + project files), git-ignored. When driven from the OpenHands
-  sandbox, sync tracked files to the Mac checkout first via
-  `agent_canvas/sync_to_mac.sh` (the sandbox filesystem is not bind-mountable
-  by the Mac's Docker daemon); the Mac-side `.env` uses Mac-absolute bind paths.
+- `agent_canvas_native/openhands-state/` is the native stack's runtime state
+  (conversations, workspaces, terminal history, logs) and is git-ignored. The
+  LLM profile, session API key, and encryption key live in `~/.openhands`
+  (also git-ignored / outside the repo).
 - All runtime defaults live as `ENV` in `dgx_spark_host/Dockerfile`;
   `entrypoint.sh` only composes the `vllm serve` command from those variables.
   Keep the README's env-var tables in sync when adding or changing defaults.

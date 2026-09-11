@@ -1,9 +1,7 @@
 context/
 .env
 
-# agent_canvas runtime data (kept on the host, never committed)
-agent_canvas/openhands-state/
-agent_canvas/projects/
+# agent_canvas_native runtime data (kept on the host, never committed)
 agent_canvas_native/openhands-state/
 
 # opencode_client secrets and generated configuration (see opencode_client/)

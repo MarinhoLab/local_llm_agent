@@ -5,9 +5,9 @@ Guidance for AI agents (and humans) working in this repository.
 ## Project overview
 
 `local_llm_agent` runs **Qwen3.8-27B (FP8, official `Qwen/Qwen3.8-27B-FP8`)** on an **NVIDIA DGX Spark** (GB10, 128 GB unified memory, aarch64) via vLLM, and drives it from **macOS** through **OpenHands**
-over an SSH tunnel.
+over an SSH tunnel (or a plain terminal via **OpenCode**).
 
-Two self-contained stacks:
+Four self-contained stacks:
 
 - `dgx_spark_host/` — vLLM server (Docker image + compose + entrypoint). Serves the
   model at `:8000/v1` on the Spark.
@@ -19,6 +19,16 @@ Two self-contained stacks:
   `dockerd`, no `--privileged` (`AGENT_CANVAS_PRIVILEGED` defaults to `false`). Set
   `AGENT_CANVAS_PRIVILEGED=true` and remove the socket line only if an agent should run
   its own nested daemon. No GPUs.
+- `agent_canvas_native/` — the same Agent Canvas stack (UI + agent-server + automation
+  server + ingress) running as local processes via Node.js ≥ 22.12 and `uv`, with **no
+  Docker**; UI at `http://localhost:8020`. See `agent_canvas_native/README.md` for ports
+  and overrides.
+- `opencode_client/` — [OpenCode](https://opencode.ai) terminal client (no Docker) that
+  connects to the same `qwen-local` model. `scripts/install-opencode.sh` installs the
+  binary and generates the provider `opencode.json` + `auth.json` from `opencode_client/.env`;
+  `scripts/check-vllm.sh` verifies the endpoint; `scripts/launch-opencode.sh` verifies
+  then launches `opencode -m dgx-vllm/qwen-local`. Shared vLLM checks live in
+  `scripts/lib_vllm.sh`. Config precedence: environment > `.env` > built-in defaults.
 
 ## Deployment constraints (do not change without a reason)
 
@@ -102,6 +112,13 @@ docker compose -f compose.yml up --build     # first run downloads ~24 GB of wei
 cd agent_canvas
 mkdir -p openhands-state projects
 docker compose up -d          # UI: http://localhost:8010/canvas
+
+# OpenCode terminal client (macOS, SSH tunnel first — same tunnel as Canvas)
+cd opencode_client
+cp example.env .env           # then edit .env if the defaults do not fit
+./scripts/install-opencode.sh # install binary + generate provider config/auth
+./scripts/check-vllm.sh       # endpoint + model + chat smoke test
+./scripts/launch-opencode.sh ~/git/my_project
 ```
 
 Sanity checks that do not need a GPU:

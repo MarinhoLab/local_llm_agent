@@ -21,18 +21,19 @@ The API is available at `http://localhost:8000/v1`. For shared networks, bind to
 
 | Variable                 | Default                | Description                                                                    |
 |--------------------------|------------------------|--------------------------------------------------------------------------------|
-| `MODEL_NAME`             | `Qwen/Qwen3.8-27B-FP8` | Hugging Face model to serve                                                    |
+| `MODEL_NAME`             | `nvidia/Qwen3.8-27B-NVFP4` | Hugging Face model to serve (NVFP4; see tuning notes)                          |
 | `SERVED_MODEL_NAME`      | `qwen-local`           | Alias exposed by the API                                                       |
 | `HOST`                   | `0.0.0.0`              | Bind address                                                                   |
 | `PORT`                   | `8000`                 | Listen port                                                                    |
 | `API_KEY`                | `local-dgx-key`        | API key for authentication                                                     |
-| `MAX_MODEL_LEN`          | `262144`               | Maximum sequence length                                                        |
+| `MAX_MODEL_LEN`          | `262144`               | Maximum sequence length (native)                                               |
 | `GPU_MEMORY_UTILIZATION` | `0.85`                 | Fraction of GPU memory to use                                                  |
 | `MAX_NUM_SEQS`           | `8`                    | Maximum concurrent sequences                                                   |
 | `MAX_NUM_BATCHED_TOKENS` | `8192`                 | Max tokens per batch                                                           |
 | `SPEC_METHOD`            | `mtp`                  | Speculative decoding method (the checkpoint ships an MTP head)                 |
-| `NUM_SPEC_TOKENS`        | `5`                    | Speculative draft tokens; ~2x decode speed at 3-5, tune per workload           |
-| `ENABLE_LONG_CONTEXT`    | `0`                    | `1` stretches context to 1M tokens via YaRN (costs ~36 GiB KV; off by default) |
+| `NUM_SPEC_TOKENS`        | `5`                    | Speculative draft tokens; `0` disables, ~2x decode speed at 3-5                 |
+| `ENABLE_LONG_CONTEXT`    | `0`                    | `1` stretches context to ~1M tokens via static YaRN (costs KV; off by default) |
+| `LONG_CONTEXT_MAX_MODEL_LEN` | `1048576`           | `--max-model-len` used when `ENABLE_LONG_CONTEXT=1` (262144 × factor 4.0)       |
 | `HF_CACHE`               | `./hf-cache`           | Volume mount path for Hugging Face cache                                       |
 | `HF_TOKEN`               | *(unset)*              | Hugging Face token for gated models                                            |
 
@@ -40,21 +41,36 @@ All vLLM defaults are set in `Dockerfile`; override via `.env` or `compose.yml`.
 
 Tuning notes (DGX Spark, GB10, 128 GB unified memory, LLM-only box):
 
-- **Model**: official `Qwen/Qwen3.8-27B-FP8` (~27 GB, fine-grained FP8 block-128,
-  quality nearly identical to the original per the model card). The checkpoint
-  ships an MTP head, so MTP speculative decoding needs no separate draft model
-  (~2x decode speed on GB10). It is a native vision-language model and image
-  inputs stay enabled via `--limit-mm-per-prompt '{"image":4}'`; there is no
-  `--language-model-only` flag in this stack.
+- **Model**: `nvidia/Qwen3.8-27B-NVFP4` — the 4-bit NVFP4 quant is the fastest
+  dense path on GB10 because decode is bandwidth-bound and 4-bit halves the
+  weight traffic. Independent DGX Spark benchmarks put NVFP4+MTP ahead of
+  FP8+MTP on aggregate throughput (~105 vs ~56 t/s at concurrency 10) and show
+  FP8 wedging under concurrent deep-context load while NVFP4 does not. The
+  official `Qwen/Qwen3.8-27B-FP8` is a fine quality-first alternative (set
+  `MODEL_NAME`); it runs a bit slower on GB10. The checkpoint ships an MTP
+  head, so MTP speculative decoding needs no separate draft model. It is a
+  native vision-language model; image inputs stay enabled via
+  `--limit-mm-per-prompt '{"image":4}'` (there is no `--language-model-only`
+  flag in this stack).
+- **Speculative decoding**: on by default — `--speculative-config
+  '{"method":"mtp","num_speculative_tokens":5}'`. The built-in MTP head roughly
+  doubles decode (measured 11.4 → ~24.7 tok/s on GB10). 5 is a mild sweet spot
+  (3–5 all land within ~14%); set `NUM_SPEC_TOKENS=0` to disable, which is the
+  only value that also restores full CUDA graphs.
 - **Memory**: `GPU_MEMORY_UTILIZATION` is a fraction of the unified CPU+GPU
   pool. 0.85 is appropriate when the Spark runs nothing but the LLM; lower it
   if you host other workloads on the box.
-- **Concurrency**: `MAX_NUM_SEQS` is 8 in this stack. Early measurements
-  suggested the per-token bandwidth tax above 4 in-flight decodes outweighed
-  continuous-batching gains on GB10; the value was raised to 8 and is kept
-  overridable via `.env` — drop it back down if multi-agent latency regresses.
-- **Context**: 262144 is the native max. `ENABLE_LONG_CONTEXT=1` enables YaRN
-  to 1,048,576 tokens (static, costs KV memory on every request).
+- **Concurrency**: `MAX_NUM_SEQS` is 8 so up to 8 agent conversations can be
+  served at once. GB10 is bandwidth-bound — early measurements suggested the
+  per-token tax above ~4 in-flight decodes partly outweighs continuous-batching
+  gains — so the value is kept overridable via `.env`; drop it toward 4 if
+  multi-agent latency regresses.
+- **Context**: 262144 is the native max. `ENABLE_LONG_CONTEXT=1` enables static
+  YaRN RoPE scaling to `LONG_CONTEXT_MAX_MODEL_LEN` (default 1,048,576) by
+  passing `VLLM_ALLOW_LONG_MAX_MODEL_LEN=1` and an `--hf-overrides`
+  `text_config.rope_parameters` block (factor 4.0). Static scaling costs KV
+  memory on every request (~36 GiB at 1M) and can slightly degrade short-context
+  quality, so it stays off unless you actually need the long window.
 
 ## `agent_canvas_native/`
 
@@ -71,7 +87,7 @@ the local filesystem (there is no container sandbox).
 ```
 
 - Address `http://localhost:8020` (avoids 8000, the vLLM tunnel).
-- LLM profile: Settings → LLM, provider **OpenAI-compatible**, base `http://localhost:8000/v1`, key `local-dgx-key`, model `Qwen/Qwen3.8-27B-FP8` (or the `qwen-local` alias).
+- LLM profile: Settings → LLM, provider **OpenAI-compatible**, base `http://localhost:8000/v1`, key `local-dgx-key`, model `qwen-local` (the served alias for `nvidia/Qwen3.8-27B-NVFP4`).
 
 | Variable             | Default                | Description                                                                 |
 |----------------------|------------------------|-----------------------------------------------------------------------------|
@@ -126,10 +142,10 @@ a target project's root for OpenCode to pick up project-specific rules.
 | `OPENCODE_PROVIDER_ID`   | `dgx-vllm`                  | Provider ID; the key in `opencode.json` and `auth.json` — all three must match   |
 | `OPENCODE_PROVIDER_NAME` | `DGX Spark vLLM`            | Display name in the OpenCode model picker (quote it in `.env` — it is sourced)   |
 | `OPENCODE_MODEL_ID`      | `qwen-local`                | Model ID exactly as vLLM serves it (from `GET /v1/models`)                       |
-| `OPENCODE_MODEL_NAME`    | `Qwen3.8-27B-FP8`           | Model display name in the picker                                                  |
+| `OPENCODE_MODEL_NAME`    | `Qwen3.8-27B-NVFP4`         | Model display name in the picker                                                  |
 | `OPENCODE_BASE_URL`      | `http://127.0.0.1:8000/v1`  | vLLM API as reachable from THIS machine (tunnel port is derived from it)         |
 | `OPENCODE_API_KEY`       | `local-dgx-key`             | Must match the vLLM server's `API_KEY`; written to the git-ignored `auth.json`   |
-| `OPENCODE_CONTEXT_LENGTH`| `262144`                    | Model context window in tokens                                                    |
+| `OPENCODE_CONTEXT_LENGTH`| `262144`                    | Model context window in tokens (match the vLLM server; use `1048576` if you enable `ENABLE_LONG_CONTEXT`) |
 | `OPENCODE_OUTPUT_LENGTH` | `16384`                     | Max output tokens                                                                 |
 | `OPENCODE_REQUEST_TIMEOUT` | `120`                     | Per-request curl timeout in seconds for the checks                                |
 | `OPENCODE_VERSION`       | *(unset)*                   | Pin an OpenCode release for the installer; unset = latest                         |

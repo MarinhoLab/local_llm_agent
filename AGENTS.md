@@ -4,7 +4,7 @@ Guidance for AI agents (and humans) working in this repository.
 
 ## Project overview
 
-`local_llm_agent` runs **Qwen3.8-27B (FP8, official `Qwen/Qwen3.8-27B-FP8`)** on an **NVIDIA DGX Spark** (GB10, 128 GB unified memory, aarch64) via vLLM, and drives it from **macOS** through **OpenHands**
+`local_llm_agent` runs **Qwen3.8-27B (NVFP4, `nvidia/Qwen3.8-27B-NVFP4`)** on an **NVIDIA DGX Spark** (GB10, 128 GB unified memory, aarch64) via vLLM, and drives it from **macOS** through **OpenHands**
 over an SSH tunnel (or a plain terminal via **OpenCode**).
 
 Three self-contained stacks:
@@ -38,16 +38,20 @@ Three self-contained stacks:
 
 ## Key tuning decisions (why they exist)
 
-- **Model**: `Qwen/Qwen3.8-27B-FP8` (official Qwen checkpoint, fine-grained
-  FP8 block-128, ~27 GB; the model card reports quality nearly identical to the
-  original). It ships a built-in **MTP head** (the model card lists
-  "MTP: trained with multiple steps", registered in
-  `model.safetensors.index.json`), so speculative decoding needs only
+- **Model**: `nvidia/Qwen3.8-27B-NVFP4` (4-bit NVFP4, ~25 GB). GB10 decode is
+  bandwidth-bound, so 4-bit halves the weight traffic and is the fastest dense
+  path on the Spark: independent DGX Spark benchmarks put NVFP4+MTP at
+  ~105 t/s aggregate at concurrency 10 vs ~56 for FP8+MTP, and FP8 wedged under
+  concurrent deep-context load while NVFP4 did not. The official
+  `Qwen/Qwen3.8-27B-FP8` remains a fine quality-first alternative — override
+  `MODEL_NAME` if preferred. The checkpoint ships a built-in **MTP head**, so
+  speculative decoding needs only
   `--speculative-config '{"method":"mtp","num_speculative_tokens":5}'` — no
-  `model` field, no separate download. MTP roughly doubles decode on GB10.
-  (If you ever switch to `unsloth/Qwen3.8-27B-NVFP4` instead, check
+  `model` field, no separate download. MTP roughly doubles decode on GB10
+  (measured 11.4 → ~24.7 tok/s; 3–5 draft tokens all within ~14%).
+  (If you ever switch to an `unsloth/*NVFP4` repack instead, check
   `tokenizer.json["truncation"] is None`: an early unsloth repack baked in a
-  2048-token prompt truncation that the official Qwen repo does not have.)
+  2048-token prompt truncation that the official/nvidia repos do not have.)
 - **vLLM image**: `vllm/vllm-openai:v0.28.0-ubuntu2404` (pinned, multi-arch,
   pulls arm64 on the Spark). Qwen3.8 needs a recent release (the `qwen3_5`
   hybrid-attention architecture; v0.24.0 predates it), and v0.28.0 also carries
@@ -67,9 +71,11 @@ Three self-contained stacks:
   <think>...</think> blocks). Do not switch either without checking the
   model's `chat_template.jinja`.
 - **Context**: 262144 is native. `ENABLE_LONG_CONTEXT=1` in `entrypoint.sh` switches
-  to 1,048,576 via YaRN (factor 4.0, must land in `text_config.rope_parameters` and
-  include `mrope_*` fields or multimodal RoPE breaks). It is static and costs ~36 GiB
-  of KV, so it stays off by default.
+  to `LONG_CONTEXT_MAX_MODEL_LEN` (default 1,048,576) via YaRN: it exports
+  `VLLM_ALLOW_LONG_MAX_MODEL_LEN=1` and passes `--hf-overrides`
+  `text_config.rope_parameters` (factor 4.0 = 262144 × 4; the block must land in
+  `text_config` and include the `mrope_*` fields or multimodal RoPE breaks). It is
+  static and costs ~36 GiB of KV, so it stays off by default.
 - **LLM configuration (model, base URL, API key)**: the OpenHands V1 web app
   does **not** read `LLM_MODEL` / `LLM_BASE_URL` / `LLM_API_KEY` env vars. It
   resolves the LLM and MCP servers from its own settings store (GUI:

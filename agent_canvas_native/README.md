@@ -67,7 +67,7 @@ The LLM is configured in the UI, not by environment variables:
 4. **API key**: the same one `run.sh` uses for its preflight check
    (`VLLM_API_KEY` in `.env`; `local-dgx-key` by default for a local tunnel).
 5. **Model ID**: the model name vLLM is serving
-   (e.g. `Qwen/Qwen3.8-27B-FP8`, or the `qwen-local` alias the stack serves).
+   (e.g. `nvidia/Qwen3.8-27B-NVFP4`, or the `qwen-local` alias the stack serves).
 6. **Save** — it takes effect immediately for new conversations.
 
 `run.sh` does a non-fatal preflight `curl` of the vLLM endpoint before launch.

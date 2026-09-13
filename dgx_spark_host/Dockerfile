@@ -12,14 +12,14 @@ ENV PORT=8000
 ENV API_KEY=local-dgx-key
 ENV MAX_MODEL_LEN=262144
 ENV GPU_MEMORY_UTILIZATION=0.80
-ENV MAX_NUM_SEQS=4
+ENV MAX_NUM_SEQS=8
 ENV MAX_NUM_BATCHED_TOKENS=8192
 ENV SERVED_MODEL_NAME=qwen-local
 ENV HF_HOME=/root/.cache/huggingface
 ENV TRANSFORMERS_CACHE=/root/.cache/huggingface
 ENV HF_XET_HIGH_PERFORMANCE=1
 ENV SPEC_METHOD=mtp
-ENV NUM_SPEC_TOKENS=3
+ENV NUM_SPEC_TOKENS=5
 
 RUN apt-get update && apt-get install -y --no-install-recommends     git     curl     ca-certificates     && rm -rf /var/lib/apt/lists/*
 

@@ -15,6 +15,7 @@ exec vllm serve "${MODEL_NAME}"   \
 --trust-remote-code \
 --seed 0 \
 --kv-cache-dtype fp8_e4m3 \
+--speculative-config "${SPECULATIVE_CONFIG}" \
 --enable-chunked-prefill \
 --enable-prefix-caching \
 --enable-auto-tool-choice \

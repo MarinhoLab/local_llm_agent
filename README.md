@@ -19,42 +19,44 @@ The API is available at `http://localhost:8000/v1`. For shared networks, bind to
 
 ### Environment Variables
 
-| Variable                 | Default                | Description                                                                    |
-|--------------------------|------------------------|--------------------------------------------------------------------------------|
-| `MODEL_NAME`             | `Qwen/Qwen3.8-27B-FP8` | Hugging Face model to serve                                                    |
-| `SERVED_MODEL_NAME`      | `qwen-local`           | Alias exposed by the API                                                       |
-| `HOST`                   | `0.0.0.0`              | Bind address                                                                   |
-| `PORT`                   | `8000`                 | Listen port                                                                    |
-| `API_KEY`                | `local-dgx-key`        | API key for authentication                                                     |
-| `MAX_MODEL_LEN`          | `262144`               | Maximum sequence length                                                        |
-| `GPU_MEMORY_UTILIZATION` | `0.85`                 | Fraction of GPU memory to use                                                  |
-| `MAX_NUM_SEQS`           | `8`                    | Maximum concurrent sequences                                                   |
-| `MAX_NUM_BATCHED_TOKENS` | `8192`                 | Max tokens per batch                                                           |
-| `SPEC_METHOD`            | `mtp`                  | Speculative decoding method (the checkpoint ships an MTP head)                 |
-| `NUM_SPEC_TOKENS`        | `5`                    | Speculative draft tokens; ~2x decode speed at 3-5, tune per workload           |
-| `ENABLE_LONG_CONTEXT`    | `0`                    | `1` stretches context to 1M tokens via YaRN (costs ~36 GiB KV; off by default) |
-| `HF_CACHE`               | `./hf-cache`           | Volume mount path for Hugging Face cache                                       |
-| `HF_TOKEN`               | *(unset)*              | Hugging Face token for gated models                                            |
+| Variable                 | Default                   | Description                                                                    |
+|--------------------------|---------------------------|--------------------------------------------------------------------------------|
+| `MODEL_NAME`             | `nvidia/Qwen3.8-27B-NVFP4` | Hugging Face model to serve                                                    |
+| `SERVED_MODEL_NAME`      | `qwen-local`              | Alias exposed by the API                                                       |
+| `HOST`                   | `0.0.0.0`                 | Bind address                                                                   |
+| `PORT`                   | `8000`                    | Listen port                                                                    |
+| `API_KEY`                | `local-dgx-key`           | API key for authentication                                                     |
+| `MAX_MODEL_LEN`          | `262144`                  | Maximum sequence length                                                        |
+| `GPU_MEMORY_UTILIZATION` | `0.80`                    | Fraction of GPU memory to use                                                  |
+| `MAX_NUM_SEQS`           | `8`                       | Maximum concurrent sequences                                                   |
+| `MAX_NUM_BATCHED_TOKENS` | `8192`                    | Max tokens per batch                                                           |
+| `SPEC_METHOD`            | `mtp`                     | Speculative decoding method (the checkpoint ships an MTP head)                 |
+| `NUM_SPEC_TOKENS`        | `5`                       | Speculative draft tokens; ~2x decode speed at 3-5, tune per workload           |
+| `HF_CACHE`               | `./hf-cache`              | Volume mount path for Hugging Face cache                                       |
+| `HF_TOKEN`               | *(unset)*                 | Hugging Face token for gated models                                            |
 
 All vLLM defaults are set in `Dockerfile`; override via `.env` or `compose.yml`.
 
 Tuning notes (DGX Spark, GB10, 128 GB unified memory, LLM-only box):
 
-- **Model**: official `Qwen/Qwen3.8-27B-FP8` (~27 GB, fine-grained FP8 block-128,
-  quality nearly identical to the original per the model card). The checkpoint
-  ships an MTP head, so MTP speculative decoding needs no separate draft model
-  (~2x decode speed on GB10). It is a native vision-language model and image
-  inputs stay enabled via `--limit-mm-per-prompt '{"image":4}'`; there is no
+- **Model**: `nvidia/Qwen3.8-27B-NVFP4` (~22 GB, NVIDIA Model Optimizer NVFP4 +
+  FP8 mixed-precision quantization of the official `Qwen/Qwen3.8-27B` base). The
+  checkpoint ships a 1-layer MTP head, so MTP speculative decoding needs no
+  separate draft model (~2x decode speed on GB10). It is a native
+  vision-language model (`qwen3_5`, image + video) and image inputs stay
+  enabled via `--limit-mm-per-prompt '{"image":4}'`; there is no
   `--language-model-only` flag in this stack.
 - **Memory**: `GPU_MEMORY_UTILIZATION` is a fraction of the unified CPU+GPU
-  pool. 0.85 is appropriate when the Spark runs nothing but the LLM; lower it
+  pool. 0.80 is appropriate when the Spark runs nothing but the LLM; lower it
   if you host other workloads on the box.
 - **Concurrency**: `MAX_NUM_SEQS` is 8 in this stack. Early measurements
   suggested the per-token bandwidth tax above 4 in-flight decodes outweighed
   continuous-batching gains on GB10; the value was raised to 8 and is kept
   overridable via `.env` — drop it back down if multi-agent latency regresses.
-- **Context**: 262144 is the native max. `ENABLE_LONG_CONTEXT=1` enables YaRN
-  to 1,048,576 tokens (static, costs KV memory on every request).
+- **Context**: 262144 is the native max (`text_config.max_position_embeddings`).
+  The `--enable-long-context`/YaRN 1M-token option that was in an earlier
+  revision of this stack has been removed; there is no `ENABLE_LONG_CONTEXT`
+  knob anymore.
 
 ## `agent_canvas_native/`
 
@@ -71,7 +73,7 @@ the local filesystem (there is no container sandbox).
 ```
 
 - Address `http://localhost:8020` (avoids 8000, the vLLM tunnel).
-- LLM profile: Settings → LLM, provider **OpenAI-compatible**, base `http://localhost:8000/v1`, key `local-dgx-key`, model `Qwen/Qwen3.8-27B-FP8` (or the `qwen-local` alias).
+- LLM profile: Settings → LLM, provider **OpenAI-compatible**, base `http://localhost:8000/v1`, key `local-dgx-key`, model `qwen-local` (the alias the stack serves; the underlying checkpoint is `nvidia/Qwen3.8-27B-NVFP4`).
 
 | Variable             | Default                | Description                                                                 |
 |----------------------|------------------------|-----------------------------------------------------------------------------|
@@ -126,7 +128,7 @@ a target project's root for OpenCode to pick up project-specific rules.
 | `OPENCODE_PROVIDER_ID`   | `dgx-vllm`                  | Provider ID; the key in `opencode.json` and `auth.json` — all three must match   |
 | `OPENCODE_PROVIDER_NAME` | `DGX Spark vLLM`            | Display name in the OpenCode model picker (quote it in `.env` — it is sourced)   |
 | `OPENCODE_MODEL_ID`      | `qwen-local`                | Model ID exactly as vLLM serves it (from `GET /v1/models`)                       |
-| `OPENCODE_MODEL_NAME`    | `Qwen3.8-27B-FP8`           | Model display name in the picker                                                  |
+| `OPENCODE_MODEL_NAME`    | `Qwen3.8-27B-NVFP4`       | Model display name in the picker                                                  |
 | `OPENCODE_BASE_URL`      | `http://127.0.0.1:8000/v1`  | vLLM API as reachable from THIS machine (tunnel port is derived from it)         |
 | `OPENCODE_API_KEY`       | `local-dgx-key`             | Must match the vLLM server's `API_KEY`; written to the git-ignored `auth.json`   |
 | `OPENCODE_CONTEXT_LENGTH`| `262144`                    | Model context window in tokens                                                    |

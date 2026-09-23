@@ -10,7 +10,7 @@
       },
       "models": {
         "qwen-local": {
-          "name": "Qwen3.8-27B-FP8",
+          "name": "Qwen3.8-27B-NVFP4",
           "reasoning": true,
           "tool_call": true,
           "limit": {

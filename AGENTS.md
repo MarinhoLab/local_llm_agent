@@ -4,7 +4,7 @@ Guidance for AI agents (and humans) working in this repository.
 
 ## Project overview
 
-`local_llm_agent` runs **Qwen3.8-27B (FP8, official `Qwen/Qwen3.8-27B-FP8`)** on an **NVIDIA DGX Spark** (GB10, 128 GB unified memory, aarch64) via vLLM, and drives it from **macOS** through **OpenHands**
+`local_llm_agent` runs **Qwen3.8-27B (`nvidia/Qwen3.8-27B-NVFP4`, NVIDIA's NVFP4 + FP8 quantization of the official `Qwen/Qwen3.8-27B`)** on an **NVIDIA DGX Spark** (GB10, 128 GB unified memory, aarch64) via vLLM, and drives it from **macOS** through **OpenHands**
 over an SSH tunnel (or a plain terminal via **OpenCode**).
 
 Three self-contained stacks:
@@ -30,7 +30,7 @@ Three self-contained stacks:
   tax above ~4 in-flight decodes outweighed continuous-batching gains, but the
   value was raised to 8 for multi-agent use; if multi-agent latency regresses,
   drop it back toward 4 via `.env`.
-- **The DGX Spark runs the LLM only.** `GPU_MEMORY_UTILIZATION=0.85` relies on
+- **The DGX Spark runs the LLM only.** `GPU_MEMORY_UTILIZATION=0.80` relies on
   nothing else sharing the unified memory pool. If the Spark gains other
   workloads, lower it.
 - Quality over speed: agentic tool-calling quality (vLLM tool-eval ~90/100 for this
@@ -38,38 +38,38 @@ Three self-contained stacks:
 
 ## Key tuning decisions (why they exist)
 
-- **Model**: `Qwen/Qwen3.8-27B-FP8` (official Qwen checkpoint, fine-grained
-  FP8 block-128, ~27 GB; the model card reports quality nearly identical to the
-  original). It ships a built-in **MTP head** (the model card lists
-  "MTP: trained with multiple steps", registered in
-  `model.safetensors.index.json`), so speculative decoding needs only
+- **Model**: `nvidia/Qwen3.8-27B-NVFP4` (NVIDIA Model Optimizer NVFP4 + FP8
+  mixed-precision quantization of the official `Qwen/Qwen3.8-27B` base, ~22 GB).
+  It ships a built-in **1-layer MTP head** (`text_config.mtp_num_hidden_layers: 1`,
+  `mtp.layers.0.*` tensors in `model.safetensors.index.json`), so speculative
+  decoding needs only
   `--speculative-config '{"method":"mtp","num_speculative_tokens":5}'` — no
   `model` field, no separate download. MTP roughly doubles decode on GB10.
-  (If you ever switch to `unsloth/Qwen3.8-27B-NVFP4` instead, check
-  `tokenizer.json["truncation"] is None`: an early unsloth repack baked in a
-  2048-token prompt truncation that the official Qwen repo does not have.)
-- **vLLM image**: `vllm/vllm-openai:v0.28.0-ubuntu2404` (pinned, multi-arch,
-  pulls arm64 on the Spark). Qwen3.8 needs a recent release (the `qwen3_5`
-  hybrid-attention architecture; v0.24.0 predates it), and v0.28.0 also carries
-  the Qwen MTP / fused GDN decode-kernel fixes. Pin a specific tag rather than
-  `latest` so rebuilds do not drift.
-- **Image inputs enabled**: Qwen3.8 is a native VLM (image + video). This stack
-  keeps the vision tower and passes
+- **vLLM image**: `vllm/vllm-openai:nightly`. Qwen3.8 uses the `qwen3_5`
+  hybrid-attention architecture (linear + full attention layers), which a
+  pinned stable release may predate, so the stack tracks a nightly build rather
+  than a specific tag. If you need reproducible builds, record the working
+  nightly tag and pin it.
+- **Image inputs enabled**: Qwen3.8 is a native VLM (image + video; the
+  checkpoint's `config.json` has `language_model_only: false`). This stack keeps
+  the vision tower and passes
   `--limit-mm-per-prompt '{"image":4}'`; there is no
-  `--language-model-only` flag. (That flag was used while experimenting with
-  the NVFP4 revision and was removed in favor of working image analysis.)
-- **`--kv-cache-dtype fp8`**: halves KV memory (~37 KB/token including the
-  DeltaNet linear-attention state). The checkpoint ships `kv_cache_quant_algo: FP8`,
-  so keep it — disabling it degrades outputs.
+  `--language-model-only` flag. (That flag was used while experimenting with an
+  earlier revision and was removed in favor of working image analysis.)
+- **`--kv-cache-dtype fp8_e4m3`**: quantizes the KV cache to fp8_e4m3 to cut KV
+  memory (the checkpoint's `text_config.rope_parameters` are already set up for
+  the model's native 262144 context). It is set in `entrypoint.sh`, not an env
+  var — to change it, edit the entrypoint.
 - **Parsers**: `--tool-call-parser qwen3_coder` (the chat template emits
   <tool_call> tags whose payload contains the function name and parameters, e.g. a
   <function=name> line) and `--reasoning-parser qwen3` (emits
   <think>...</think> blocks). Do not switch either without checking the
   model's `chat_template.jinja`.
-- **Context**: 262144 is native. `ENABLE_LONG_CONTEXT=1` in `entrypoint.sh` switches
-  to 1,048,576 via YaRN (factor 4.0, must land in `text_config.rope_parameters` and
-  include `mrope_*` fields or multimodal RoPE breaks). It is static and costs ~36 GiB
-  of KV, so it stays off by default.
+- **Context**: 262144 is the native max (`text_config.max_position_embeddings`).
+  An earlier revision of `entrypoint.sh` had an `ENABLE_LONG_CONTEXT` switch that
+  stretched this to 1,048,576 via YaRN (factor 4.0); it was removed, so there is
+  no long-context knob in the current stack — `--max-model-len` is fixed at
+  `MAX_MODEL_LEN` (262144).
 - **LLM configuration (model, base URL, API key)**: the OpenHands V1 web app
   does **not** read `LLM_MODEL` / `LLM_BASE_URL` / `LLM_API_KEY` env vars. It
   resolves the LLM and MCP servers from its own settings store (GUI:
@@ -92,7 +92,7 @@ Three self-contained stacks:
 ```bash
 # DGX Spark side
 cd dgx_spark_host
-docker compose -f compose.yml up --build     # first run downloads ~24 GB of weights
+docker compose -f compose.yml up --build     # first run downloads ~22 GB of weights
 
 # Agent Canvas side (macOS, SSH tunnel first: ssh -N -L 8000:localhost:8000 USER@DGX_SPARK_IP)
 ./agent_canvas_native/install.sh   # one-time (upgrades on re-run)

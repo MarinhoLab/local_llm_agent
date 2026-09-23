@@ -22,14 +22,14 @@ Agent Canvas client and the OpenCode client run **natively** (no Docker); see
 
 | Stack | Directory | Machine | What it runs | Command |
 |---|---|---|---|---|
-| vLLM server | `dgx_spark_host/` | NVIDIA DGX Spark (aarch64, GPU) | Qwen3.8-27B (FP8) served at `:8000/v1` | `docker compose -f compose.yml up --build` |
+| vLLM server | `dgx_spark_host/` | NVIDIA DGX Spark (aarch64, GPU) | `nvidia/Qwen3.8-27B-NVFP4` served at `:8000/v1` | `docker compose -f compose.yml up --build` |
 
 The macOS-side clients reach the model over an **SSH tunnel** (see below).
 There is no Docker compose on the Mac.
 
 ## Bringing the stack up
 
-**DGX Spark (server)** — first run downloads ~24 GB of weights:
+**DGX Spark (server)** — first run downloads ~22 GB of weights:
 
 ```bash
 cd dgx_spark_host
@@ -64,7 +64,7 @@ deliberate:
   **NVIDIA Container Toolkit** on the Spark. If the container starts but the
   log shows no GPU / vLLM OOMs, the toolkit is missing or not on the PATH.
 - **`HF_CACHE:-./hf-cache:/root/.cache/huggingface`** persists downloaded weights
-  across runs. Do not delete it or the next start re-downloads ~24 GB.
+  across runs. Do not delete it or the next start re-downloads ~22 GB.
 - All runtime defaults live as `ENV` in `dgx_spark_host/Dockerfile`;
   `entrypoint.sh` composes the `vllm serve` command from those variables. Keep
   the README's env-var table in sync when changing defaults.

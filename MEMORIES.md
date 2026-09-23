@@ -425,3 +425,71 @@ renders cleanly with `DOCKER_HOST` set, the `/var/run/docker.sock` bind, and no
 `privileged` key (unprivileged default). Docs kept in sync: README env-var table
 + prose, AGENTS.md stack description, and the `docker-usage` skill (now leads
 with the shared socket; nested daemon demoted to a clearly-labelled fallback).
+
+### 2026-09 — Checkpoint swap: official FP8 → NVIDIA NVFP4, vLLM → nightly
+
+The `dgx_spark_host/` stack moved away from the official FP8 checkpoint to
+NVIDIA's repack, and the pinned vLLM image to a nightly build. This entry
+records the current state so the README/AGENTS tuning notes do not read as if
+the old FP8 setup were still live.
+
+**What changed in `dgx_spark_host/`:**
+
+- `Dockerfile`: `MODEL_NAME` is now `nvidia/Qwen3.8-27B-NVFP4` (was
+  `Qwen/Qwen3.8-27B-FP8`); `FROM` is now `vllm/vllm-openai:nightly` (was pinned
+  `vllm/vllm-openai:v0.28.0-ubuntu2404`); `GPU_MEMORY_UTILIZATION` is now `0.80`
+  (was `0.85`). `MAX_NUM_SEQS` is `8`, `NUM_SPEC_TOKENS` is `5`, `SPEC_METHOD`
+  is `mtp`.
+- `entrypoint.sh`: `--kv-cache-dtype fp8_e4m3` (was `fp8`); `--seed 0` added;
+  speculative decoding is back on via
+  `--speculative-config '{"method":"mtp","num_speculative_tokens":5}'`.
+  Removed from an earlier revision and **not re-added**: `--dtype auto`,
+  `--async-scheduling`, `--load-format fastsafetensors`, and the
+  `ENABLE_LONG_CONTEXT`/YaRN 1M-token switch.
+
+**Why (per the commit messages):** the NVFP4 checkpoint was tried to merge the
+server settings toward the values in the model card; the pinned v0.28.0 image
+was swapped to `nightly` because the `qwen3_5` hybrid-attention architecture and
+Qwen MTP / fused-decode kernels track the nightly line rather than a stable
+tag.
+
+**Verified checkpoint facts** (`nvidia/Qwen3.8-27B-NVFP4`, cross-checked against
+the Hugging Face `config.json` / index / `hf_quant_config.json`):
+
+- It is an **NVIDIA Model Optimizer** quantization (`quant_method: modelopt`,
+  `quant_algo: MIXED_PRECISION`) of the official `Qwen/Qwen3.8-27B` base:
+  linear-attention + full-attention projections are **FP8** (FP8 weight +
+  dynamic FP8 input activation), the MLP and `lm_head` are **NVFP4**
+  (`group_size: 16`). Total weight download is **~22 GB** (was ~27 GB for the
+  FP8 repack).
+- `model_type` is **`qwen3_5`**, `architectures` is
+  `Qwen3_5ForConditionalGeneration`, with a `vision_config` and
+  `language_model_only: false` — a native VLM (image + video), which is why the
+  entrypoint keeps `--limit-mm-per-prompt '{"image":4}'` and there is no
+  `--language-model-only` flag.
+- It ships a **1-layer MTP head**: `text_config.mtp_num_hidden_layers: 1`, with
+  `mtp.layers.0.*` tensors in `model.safetensors.index.json`. So MTP
+  speculative decoding needs no separate draft model.
+- `text_config.max_position_embeddings` is **262144** (the native context the
+  stack serves; `--max-model-len` is fixed at `MAX_MODEL_LEN`).
+- `hf_quant_config.json` sets `kv_cache_quant_algo` to **`None`** for this
+  NVFP4 repack — the checkpoint does **not** itself request FP8 KV, so the
+  entrypoint sets `--kv-cache-dtype fp8_e4m3` explicitly. (The FP8 model card's
+  `kv_cache_quant_algo: FP8` note applied to the previous `Qwen/Qwen3.8-27B-FP8`
+  checkpoint, not this one.)
+
+**Docs brought back in sync (this change):** the `dgx_spark_host` env-var table
+and tuning notes in `README.md`, the project overview + Key-tuning-decisions in
+`AGENTS.md` (model, vLLM image, image-inputs, `--kv-cache-dtype`, context), the
+opencode display name (`Qwen3.8-27B-NVFP4`) in `opencode_client/example.env`,
+`opencode.example.json`, and `scripts/lib_vllm.sh`, the LLM-profile example in
+`agent_canvas_native/README.md`, and the `docker-usage` skill (model + ~22 GB
+download size). No code changed — `entrypoint.sh`, `Dockerfile`, `compose.yml`,
+and the client scripts were already on the NVFP4/nightly path; only the prose
+was stale.
+
+**Caveats / things to re-verify on the real Spark:** the `nightly` base image
+is unpinned, so a rebuild can drift — record the working nightly tag if
+reproducible builds are needed. The "~2x decode" figure for MTP at
+`NUM_SPEC_TOKENS=5` was carried over from the earlier FP8 measurements; re-measure
+if the NVFP4 repack changes decode behaviour.

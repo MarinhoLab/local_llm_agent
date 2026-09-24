@@ -158,12 +158,13 @@ Tailscale at `http://<pc>.tail:2020/<topic>`.
 
 ```bash
 cd ntfy
-cp example.env .env     # set NTFY_BASE_URL + NTFY_JWT_SECRET
+cp example.env .env     # set NTFY_BASE_URL=http://<this-pc>.tail:2020
 docker compose up -d    # healthcheck via docker compose ps
 ```
 
-Access token creation, phone setup (Android instant delivery / iOS relay),
-security and the Firebase/custom-APK caveat are documented in
+Security model (unguessable topic = credential on Tailscale), optional
+account auth, phone setup (Android instant delivery / iOS relay) and the
+Firebase/custom-APK caveat are documented in
 [`ntfy/README.md`](ntfy/README.md). Enable end-to-end notifications via
 `NTFY_ENABLED=true` in `agent_canvas_native/.env` (see
 `agent_canvas_native/README.md` → *Notifications (ntfy)*).

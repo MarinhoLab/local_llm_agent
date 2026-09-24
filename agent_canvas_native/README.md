@@ -172,19 +172,19 @@ Each notification carries a **tap-to-open deep link** to the conversation:
 1. **ntfy server** — one-time, per PC (see [`../ntfy/README.md`](../ntfy/README.md)):
    ```bash
    cd ntfy && cp example.env .env
-   # edit .env: NTFY_BASE_URL=http://<this-pc>.tail:2020, NTFY_JWT_SECRET=$(openssl rand -hex 32)
+   # edit .env: NTFY_BASE_URL=http://<this-pc>.tail:2020
    docker compose up -d
-   # create a token for the notifier:
-   docker compose exec ntfy ntfy token create agent-canvas-notifier
    ```
+   No account auth needed by default — the unguessable topic name is the
+   credential (Tailscale reachability + random topic = your protection).
 2. **Notifier config** — in `agent_canvas_native/.env`:
    ```bash
    NTFY_ENABLED=true
    NTFY_SERVER=http://127.0.0.1:2020        # this PC's local ntfy
    NTFY_TOPIC=agent-canvas-<unguessable>     # e.g. agent-canvas-3f9a1c7e
-   NTFY_AUTH_TOKEN=tk_...                    # from step 1
    NTFY_HOSTNAME=mac                          # your Tailscale name
    NTFY_DEEP_LINK_PREFIX=http://mac.tail:8020/conversations/
+   # NTFY_AUTH_TOKEN=tk_...                   # only if you enabled account auth
    ```
 3. **Phone** — in the ntfy app, subscribe to
    `http://<this-pc>.tail:2020/<NTFY_TOPIC>` (repeat for each PC).
@@ -223,7 +223,8 @@ prefix still needs a reachable URL for tap-to-open.
 | UI loads but the model "doesn't work" | The LLM profile isn't set or the vLLM tunnel is down. Set Settings → LLM and confirm `curl http://localhost:8000/v1/models` works. |
 | `uvx` not found when launching | `uv` isn't on `PATH`. Install it and open a new terminal. |
 | Notifier: `waiting for agent-server session API key...` loops | The Canvas hasn't started yet or the key file was removed. Wait for the stack to come up, or set `LOCAL_BACKEND_API_KEY` in `.env`. Log: `openhands-state/logs/ntfy.log`. |
-| Notifier: `WARN: ntfy publish failed HTTP 401/403` | `NTFY_AUTH_TOKEN` missing/wrong, or the token is read-only. Recreate a write-scoped token (see `../ntfy/README.md`). |
+| Notifier: `WARN: ntfy publish failed HTTP 401/403` | Only when you enabled account auth (`NTFY_AUTH_FILE`): `NTFY_AUTH_TOKEN` missing/wrong, or the token lacks write access. Re-create it (`../ntfy/README.md` → *Authentication*). |
+| ntfy container exits and logs show the CLI help | The `serve` subcommand is missing. `compose.yml` sets `command: serve`; if you ran the image directly, add `serve` after the image name. |
 | Phone gets no notifications | Check the ntfy server is healthy (`docker compose ps`), the topic matches exactly, and (Android) instant delivery is on. Deep links need the phone on Tailscale and port `8020` reachable. |
 
 ## Uninstall

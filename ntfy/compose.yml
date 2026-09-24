@@ -10,19 +10,28 @@
 # for the full list.
 #
 # Security model (single user, Tailscale):
-#   - The container is reachable on the Tailscale interface only. The host
-#     firewall should deny the port on non-Tailscale interfaces.
-#   - NTFY_JWT_SECRET (set in .env) enables signed JWT auth and gates the
-#     admin UI / token endpoints against anonymous use.
-#   - Create a write-scoped access token for the notifier (see README) and
-#     put it in agent_canvas_native/.env as NTFY_AUTH_TOKEN. The topic name is
-#     the second secret — keep NTFY_TOPIC unguessable.
+#   - The container is reachable on the Tailscale interface only (WireGuard
+#     encrypts the traffic; the host firewall should keep the port off any
+#     non-Tailscale interface).
+#   - The unguessable topic name is the credential, the same model ntfy.sh
+#     uses for its public topics. Anyone who knows the topic can read/write
+#     it — so pick NTFY_TOPIC long and random.
+#   - Optional: set NTFY_AUTH_FILE below to enable account auth (users,
+#     ACLs, access tokens) for stronger protection. See ntfy/README.md
+#     "Optional: account auth".
 
 services:
   ntfy:
     image: binwiederhier/ntfy:latest   # pin a tag (e.g. :v2.11.0) for reproducible builds
     container_name: ntfy
     restart: unless-stopped
+    # The image's ENTRYPOINT is `ntfy` with no default subcommand, so the
+    # `serve` subcommand must be given explicitly or the container just
+    # prints the CLI help and exits.
+    command: serve
+    # init: true lets Docker's init reap zombies — needed when a healthcheck
+    # is configured (matches the official ntfy compose example).
+    init: true
     ports:
       # Host port -> container port. ntfy listens on 80 inside the container;
       # we pick the host port.
@@ -37,10 +46,11 @@ services:
       # via APNs to the iOS app. Android uses instant delivery (a foreground
       # service) and does not need this. See ntfy/README.md.
       - NTFY_UPSTREAM_BASE_URL=${NTFY_UPSTREAM_BASE_URL:-https://ntfy.sh}
-      # JWT signing secret. Strongly recommended for a safe single-user
-      # deployment — it gates the admin UI and token creation. Generate with:
-      #   openssl rand -hex 32
-      - NTFY_JWT_SECRET=${NTFY_JWT_SECRET:-}
+      # Optional: enable account auth (users, ACLs, access tokens). Unset by
+      # default — on a Tailscale-only server the topic name is the credential.
+      # If you set it, the dir must exist (a named/host volume works best) so
+      # the SQLite DB persists. See ntfy/README.md "Optional: account auth".
+      - NTFY_AUTH_FILE=${NTFY_AUTH_FILE:-}
       # Persist the message cache + attachments across container restarts.
       - NTFY_CACHE_FILE=/var/cache/ntfy/cache.db
       - NTFY_ATTACHMENT_CACHE_DIR=/var/cache/ntfy/attachments
@@ -49,13 +59,18 @@ services:
     volumes:
       # Named volume for cache.db + attachments. Survives image upgrades.
       - ntfy-data:/var/cache/ntfy
+      # User database dir, used only when NTFY_AUTH_FILE is set (optional
+      # account auth). Default auth-file location is /var/lib/ntfy/user.db.
+      - ntfy-auth:/var/lib/ntfy
     healthcheck:
-      # ntfy serves /healthz; a 200 means it is up and accepting publish.
-      test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1:80/healthz"]
-      interval: 30s
-      timeout: 5s
+      # ntfy serves a JSON health endpoint at /v1/health that returns
+      # {"healthy": true}; match the official ntfy compose healthcheck.
+      test: ["CMD-SHELL", "wget -q --tries=1 -O- http://127.0.0.1:80/v1/health | grep -Eo '\"healthy\"\\s*:\\s*true' || exit 1"]
+      interval: 60s
+      timeout: 10s
       retries: 3
-      start_period: 10s
+      start_period: 40s
 
 volumes:
   ntfy-data:
+  ntfy-auth:

@@ -30,7 +30,6 @@ coordination. Phones subscribe to each PC's server over **Tailscale**.
 cd ntfy
 cp example.env .env
 #    edit .env: set NTFY_BASE_URL=http://<this-pc>.tail:<NTFY_PORT>
-#    and NTFY_JWT_SECRET=$(openssl rand -hex 32)
 
 # 2. start (Docker required on this PC)
 docker compose up -d
@@ -40,28 +39,41 @@ docker compose ps        # ntfy should be "healthy"
 The notifier (`agent_canvas_native/`) and the phone both talk to the **same**
 `NTFY_PORT`; the notifier reaches it on `127.0.0.1`, the phone over Tailscale.
 
-## Create the access token the notifier uses
+> **`command: serve` is required.** The official image's `ENTRYPOINT` is bare
+> `ntfy` with no default subcommand, so without it the container prints the CLI
+> help and exits (that's the symptom if `docker compose logs ntfy` shows a
+> usage screen instead of startup logs). `compose.yml` already sets it.
 
-Once the server is up, open its admin UI from the PC itself:
+## Authentication (how to secure the server)
 
-```
-http://127.0.0.1:2020  (Settings → Account → "Access tokens")
-```
+**Default — no account auth (recommended for this repo).** The server runs
+without a user database, and the **unguessable topic name is the credential** —
+the same model ntfy.sh uses for its public topics. Your protection is
+Tailscale reachability + a long random `NTFY_TOPIC`. The notifier publishes
+with no token, so `NTFY_AUTH_TOKEN` stays empty. This is the path the rest of
+the docs assume.
 
-or via the CLI:
+**Optional — account auth (users, ACLs, access tokens).** If you want the
+stronger model, do this:
 
-```bash
-docker compose exec ntfy ntfy token create agent-canvas-notifier
-# -> prints an access token like  tk_AgQdq...
-```
+1. In `ntfy/.env`, set `NTFY_AUTH_FILE=/var/lib/ntfy/user.db`, then
+   `docker compose up -d`. The user DB is created on the `ntfy-auth` volume.
+2. Create a user and an access token (verified commands):
+   ```bash
+   docker compose exec -e NTFY_PASSWORD=<choose-a-password> ntfy \
+     ntfy user add --role=admin agent-canvas
+   docker compose exec ntfy ntfy token add agent-canvas
+   # -> prints a token like  tk_...
+   ```
+3. Put that token in `agent_canvas_native/.env` as `NTFY_AUTH_TOKEN`.
+4. (Recommended) lock the server so anonymous access is denied:
+   ```bash
+   docker compose exec ntfy ntfy access --help   # see syntax
+   ```
 
-Put that token in `agent_canvas_native/.env` as `NTFY_AUTH_TOKEN`. With a
-write-scoped token, only your notifier (and you, in the admin UI) can publish
-to this server.
-
-> The token grants account-level access (ntfy has no granular tokens yet).
-> Combined with Tailscale reachability + JWT admin gating, that is the
-> intended single-user security model for this repo.
+> The `ntfy token create` command does not exist in the current CLI (it is
+> `add`), and `add`/`user` require an `auth-file` to be configured — hence
+> step 1 above.
 
 ## Subscribe on your phone
 

@@ -1,0 +1,61 @@
+# ntfy/compose.yml — per-PC, self-hosted ntfy push server (single container).
+#
+# One of these runs on every PC that runs Agent Canvas. The Agent Canvas
+# notifier (agent_canvas_native/ntfy_notifier.py) publishes to it on
+# 127.0.0.1:<NTFY_PORT>; your phone reaches it over Tailscale at
+# http://<this-pc>.tail:<NTFY_PORT>/<topic>.
+#
+# Config lives in ntfy/.env (copy ntfy/example.env -> ntfy/.env). All knobs
+# are NTFY_* env vars read by the ntfy server; see https://ntfy.sh/docs/config
+# for the full list.
+#
+# Security model (single user, Tailscale):
+#   - The container is reachable on the Tailscale interface only. The host
+#     firewall should deny the port on non-Tailscale interfaces.
+#   - NTFY_JWT_SECRET (set in .env) enables signed JWT auth and gates the
+#     admin UI / token endpoints against anonymous use.
+#   - Create a write-scoped access token for the notifier (see README) and
+#     put it in agent_canvas_native/.env as NTFY_AUTH_TOKEN. The topic name is
+#     the second secret — keep NTFY_TOPIC unguessable.
+
+services:
+  ntfy:
+    image: binwiederhier/ntfy:latest   # pin a tag (e.g. :v2.11.0) for reproducible builds
+    container_name: ntfy
+    restart: unless-stopped
+    ports:
+      # Host port -> container port. ntfy listens on 80 inside the container;
+      # we pick the host port.
+      - "${NTFY_PORT:-2020}:80"
+    environment:
+      # Public URL phones use to subscribe. Set to this PC's Tailscale URL,
+      # e.g. http://mac.tail:2020. If unset, ntfy infers from the request Host
+      # header, which also works, but an explicit value is more reliable.
+      - NTFY_BASE_URL=${NTFY_BASE_URL:-}
+      # iOS push for self-hosted servers: ntfy forwards a lightweight
+      # "poll request" to this upstream (ntfy.sh by default), which relays it
+      # via APNs to the iOS app. Android uses instant delivery (a foreground
+      # service) and does not need this. See ntfy/README.md.
+      - NTFY_UPSTREAM_BASE_URL=${NTFY_UPSTREAM_BASE_URL:-https://ntfy.sh}
+      # JWT signing secret. Strongly recommended for a safe single-user
+      # deployment — it gates the admin UI and token creation. Generate with:
+      #   openssl rand -hex 32
+      - NTFY_JWT_SECRET=${NTFY_JWT_SECRET:-}
+      # Persist the message cache + attachments across container restarts.
+      - NTFY_CACHE_FILE=/var/cache/ntfy/cache.db
+      - NTFY_ATTACHMENT_CACHE_DIR=/var/cache/ntfy/attachments
+      # Optional: write server logs to a file in the volume.
+      - NTFY_LOG_FILE=${NTFY_LOG_FILE:-}
+    volumes:
+      # Named volume for cache.db + attachments. Survives image upgrades.
+      - ntfy-data:/var/cache/ntfy
+    healthcheck:
+      # ntfy serves /healthz; a 200 means it is up and accepting publish.
+      test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1:80/healthz"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+volumes:
+  ntfy-data:

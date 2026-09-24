@@ -4,6 +4,12 @@ context/
 # agent_canvas_native runtime data (kept on the host, never committed)
 agent_canvas_native/openhands-state/
 
+# ntfy server config & data (per-PC push server, see ntfy/)
+ntfy/.env
+
+# Python (ntfy_notifier.py runs with the system interpreter)
+__pycache__/
+
 # opencode_client secrets and generated configuration (see opencode_client/)
 opencode_client/.env
 opencode_client/auth.json

@@ -7,7 +7,7 @@ Guidance for AI agents (and humans) working in this repository.
 `local_llm_agent` runs **Qwen3.8-27B (`nvidia/Qwen3.8-27B-NVFP4`, NVIDIA's NVFP4 + FP8 quantization of the official `Qwen/Qwen3.8-27B`)** on an **NVIDIA DGX Spark** (GB10, 128 GB unified memory, aarch64) via vLLM, and drives it from **macOS** through **OpenHands**
 over an SSH tunnel (or a plain terminal via **OpenCode**).
 
-Three self-contained stacks:
+Three self-contained stacks plus a notification sidecar:
 
 - `dgx_spark_host/` — vLLM server (Docker image + compose + entrypoint). Serves the
   model at `:8000/v1` on the Spark.
@@ -22,6 +22,14 @@ Three self-contained stacks:
   `scripts/check-vllm.sh` verifies the endpoint; `scripts/launch-opencode.sh` verifies
   then launches `opencode -m dgx-vllm/qwen-local`. Shared vLLM checks live in
   `scripts/lib_vllm.sh`. Config precedence: environment > `.env` > built-in defaults.
+- `ntfy/` — per-PC [ntfy](https://ntfy.sh) push server (single Docker container,
+  port `2020`). With `NTFY_ENABLED=true` in `agent_canvas_native/.env`, `run.sh`
+  also starts `agent_canvas_native/ntfy_notifier.py`, a stdlib-only daemon that
+  polls the local agent-server and pushes phone notifications on conversation
+  status transitions (finished / idle = needs input / waiting_for_confirmation /
+  error / stuck). Designed for multiple PCs on Tailscale, each running its own
+  server + notifier. See `ntfy/README.md` and `agent_canvas_native/README.md`
+  → *Notifications (ntfy)*.
 
 ## Deployment constraints (do not change without a reason)
 

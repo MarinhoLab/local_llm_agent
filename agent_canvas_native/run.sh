@@ -111,7 +111,59 @@ else
   echo
 fi
 
-# --- 4. launch --------------------------------------------------------------
+# --- 4. ntfy notifications --------------------------------------------------
+# Optionally start the ntfy push server (../ntfy, if Docker is available) and
+# the notifier daemon (ntfy_notifier.py) so conversation status changes are
+# pushed to the ntfy app on the user's phone over Tailscale. Both are no-ops
+# when NTFY_ENABLED is not true, which is the default.
+#
+# The notifier is backgrounded via nohup so the `exec agent-canvas` below can
+# replace this shell cleanly; it keeps running independently and dies with
+# the machine, or is stopped with `pkill -f ntfy_notifier.py`.
+if [[ "${NTFY_ENABLED:-}" == "true" || "${NTFY_ENABLED:-}" == "1" ]]; then
+  STATE_LOG_DIR="${AGENT_CANVAS_STATE}/logs"
+  mkdir -p "${STATE_LOG_DIR}"
+
+  # 4a. local ntfy server — only when pointing at the loopback default and
+  #     Docker is present. A remote NTFY_SERVER (e.g. https://ntfy.sh) skips
+  #     this entirely.
+  if [[ "${NTFY_SERVER:-http://127.0.0.1:2020}" == http://127.0.0.1:* \
+        || "${NTFY_SERVER:-http://127.0.0.1:2020}" == http://localhost:* ]]; then
+    NTFY_DIR="$(cd "${SCRIPT_DIR}/../ntfy" && pwd)"
+    if command -v docker >/dev/null 2>&1; then
+      if ! docker ps --format '{{.Names}}' 2>/dev/null | grep -qx ntfy; then
+        echo "starting local ntfy server (ntfy/compose.yml, port ${NTFY_PORT:-2020})..."
+        if (cd "${NTFY_DIR}" && docker compose up -d); then
+          echo "ntfy server starting — http://127.0.0.1:${NTFY_PORT:-2020}"
+        else
+          echo "WARNING: 'docker compose up -d' in ${NTFY_DIR} failed — see ntfy/README.md" >&2
+        fi
+      fi
+    else
+      echo "WARNING: NTFY_ENABLED=true but docker is not on PATH — the local ntfy server was not started." >&2
+      echo "         Install Docker, or point NTFY_SERVER at a remote ntfy (e.g. https://ntfy.sh)." >&2
+    fi
+  fi
+
+  # 4b. notifier daemon (Python stdlib only — no venv needed). Point it at the
+  #     agent-server through the ingress (AGENT_CANVAS_PORT), which proxies
+  #     /api; NTFY_BASE_URL overrides this if the agent-server is reachable
+  #     directly on another port.
+  NOTIFY_LOG="${STATE_LOG_DIR}/ntfy.log"
+  NTFY_BASE_URL="http://localhost:${AGENT_CANVAS_PORT}" \
+  NTFY_STATE_FILE="${AGENT_CANVAS_STATE}/ntfy_notifier_state.json" \
+    nohup python3 "${SCRIPT_DIR}/ntfy_notifier.py" \
+    >>"${NOTIFY_LOG}" 2>&1 < /dev/null &
+  NOTIFY_PID=$!
+  if [[ -n "${NOTIFY_PID}" ]] && kill -0 "${NOTIFY_PID}" 2>/dev/null; then
+    echo "ntfy notifier running (pid ${NOTIFY_PID}) — log: ${NOTIFY_LOG}"
+    echo "stop it with: pkill -f ntfy_notifier.py"
+  else
+    echo "WARNING: ntfy notifier failed to start — see ${NOTIFY_LOG}" >&2
+  fi
+fi
+
+# --- 5. launch --------------------------------------------------------------
 # Everything runs as your user on the local machine. The launcher's default
 # state dir is ~/.openhands/agent-canvas; we point it at AGENT_CANVAS_STATE so
 # the state lives next to this folder (git-ignored) instead of in $HOME.

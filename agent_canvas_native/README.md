@@ -88,6 +88,7 @@ repo's other stack (8000 vLLM):
 | **Agent Canvas ingress** (UI + proxied API) | `8020` | the only port you normally touch; `run.sh` passes it as `--port` |
 | agent-server | `18000` | internal; proxied at `/api`, `/server_info`, etc. |
 | automation server | `18001` | internal; proxied at `/api/automation` |
+| **ntfy push server** (optional) | `2020` | only when `NTFY_ENABLED=true` + local ntfy (`../ntfy/compose.yml`); `NTFY_PORT` |
 | **vLLM (SSH tunnel)** | `8000` | the model endpoint — a *separate* tunnel, not part of this stack |
 
 Pick a different ingress port with `AGENT_CANVAS_PORT=8030 ./run.sh`. If your
@@ -140,6 +141,77 @@ create a conversation you just pick a host path to work in (a checked-out
 repo, a new folder, etc.) and the agent edits it in place with your
 permissions.
 
+## Notifications (ntfy)
+
+Get a push notification on your phone when your agent finishes a turn, is
+waiting for your input, hits an error, or gets stuck. Implemented by a small
+stdlib-only daemon, `ntfy_notifier.py`, that polls the local agent-server and
+publishes to [ntfy](https://ntfy.sh) on status transitions — no SDK, no venv.
+
+This stack is designed for **multiple PCs, each on Tailscale, each running its
+own ntfy server** (see [`../ntfy/`](../ntfy/)). One notifier per PC; each
+notifier only ever talks to its local ntfy server and its local agent-server.
+
+### What triggers a notification
+
+| Conversation status | Notification | Priority |
+|---|---|---|
+| `idle` | finished a turn — needs your input 👀 | 3 (default) |
+| `finished` | conversation completed ✅ | 3 |
+| `waiting_for_confirmation` | waiting for your confirmation 🚦 | 4 (high) |
+| `stuck` | stuck detection fired 🐌 | 4 |
+| `error` | hit an error 🚨 | 5 (max) |
+
+Only transitions notify (not every poll), with a per-conversation cooldown
+(default 120 s) so a conversation flapping between statuses can't spam you.
+Each notification carries a **tap-to-open deep link** to the conversation:
+`http://<this-pc>.tail:8020/conversations/<id>`.
+
+### Setup (per PC)
+
+1. **ntfy server** — one-time, per PC (see [`../ntfy/README.md`](../ntfy/README.md)):
+   ```bash
+   cd ntfy && cp example.env .env
+   # edit .env: NTFY_BASE_URL=http://<this-pc>.tail:2020, NTFY_JWT_SECRET=$(openssl rand -hex 32)
+   docker compose up -d
+   # create a token for the notifier:
+   docker compose exec ntfy ntfy token create agent-canvas-notifier
+   ```
+2. **Notifier config** — in `agent_canvas_native/.env`:
+   ```bash
+   NTFY_ENABLED=true
+   NTFY_SERVER=http://127.0.0.1:2020        # this PC's local ntfy
+   NTFY_TOPIC=agent-canvas-<unguessable>     # e.g. agent-canvas-3f9a1c7e
+   NTFY_AUTH_TOKEN=tk_...                    # from step 1
+   NTFY_HOSTNAME=mac                          # your Tailscale name
+   NTFY_DEEP_LINK_PREFIX=http://mac.tail:8020/conversations/
+   ```
+3. **Phone** — in the ntfy app, subscribe to
+   `http://<this-pc>.tail:2020/<NTFY_TOPIC>` (repeat for each PC).
+4. **Run** — `./agent_canvas_native/run.sh` starts the notifier automatically
+   (and the local ntfy server, if Docker is available). Its log lives at
+   `openhands-state/logs/ntfy.log`.
+
+Using the public **ntfy.sh** instead of a local server? Set
+`NTFY_SERVER=https://ntfy.sh`, leave `NTFY_AUTH_TOKEN` empty, and use a long
+unguessable `NTFY_TOPIC` (the topic name is the password). The deep-link
+prefix still needs a reachable URL for tap-to-open.
+
+### Notes
+
+- The notifier reads the session API key from the launcher (env or
+  `~/.openhands/agent-canvas/api-key.txt`) and uses it only for its own
+  agent-server calls — it is **never** written into ntfy messages.
+- To send a test notification without a state change, run the notifier once
+  with `NTFY_DRY_RUN=true` to see exactly what it would publish, or trigger
+  `NTFY_EVENTS=idle,finished,error,stuck,waiting_for_confirmation,paused` and
+  toggle a conversation's status in the UI.
+- To stop the notifier: `pkill -f ntfy_notifier.py` (the agent-server is
+  unaffected).
+- Push reliability: Android gets instant delivery out of the box (foreground
+  service); iOS uses the ntfy.sh relay configured in `../ntfy/compose.yml`.
+  Details and the Firebase/custom-APK caveat are in [`../ntfy/README.md`](../ntfy/README.md).
+
 ## Troubleshooting
 
 | Symptom | Cause / fix |
@@ -150,6 +222,9 @@ permissions.
 | `Node.js ... is too old` | Install Node ≥ 22.12. |
 | UI loads but the model "doesn't work" | The LLM profile isn't set or the vLLM tunnel is down. Set Settings → LLM and confirm `curl http://localhost:8000/v1/models` works. |
 | `uvx` not found when launching | `uv` isn't on `PATH`. Install it and open a new terminal. |
+| Notifier: `waiting for agent-server session API key...` loops | The Canvas hasn't started yet or the key file was removed. Wait for the stack to come up, or set `LOCAL_BACKEND_API_KEY` in `.env`. Log: `openhands-state/logs/ntfy.log`. |
+| Notifier: `WARN: ntfy publish failed HTTP 401/403` | `NTFY_AUTH_TOKEN` missing/wrong, or the token is read-only. Recreate a write-scoped token (see `../ntfy/README.md`). |
+| Phone gets no notifications | Check the ntfy server is healthy (`docker compose ps`), the topic matches exactly, and (Android) instant delivery is on. Deep links need the phone on Tailscale and port `8020` reachable. |
 
 ## Uninstall
 

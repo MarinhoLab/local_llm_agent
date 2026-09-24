@@ -3,6 +3,9 @@
 Run a Qwen model on a DGX Spark and connect to it from macOS using
 [Agent Canvas](https://docs.openhands.dev/openhands/usage/agent-canvas/setup)
 (native, no Docker) or [OpenCode](https://opencode.ai) (terminal client, no Docker).
+Push notifications of agent activity to your phone via
+[ntfy](https://ntfy.sh) are included (`ntfy/` + `agent_canvas_native/README.md`
+→ *Notifications*).
 
 ## `dgx_spark_host/`
 
@@ -74,6 +77,7 @@ the local filesystem (there is no container sandbox).
 
 - Address `http://localhost:8020` (avoids 8000, the vLLM tunnel).
 - LLM profile: Settings → LLM, provider **OpenAI-compatible**, base `http://localhost:8000/v1`, key `local-dgx-key`, model `qwen-local` (the alias the stack serves; the underlying checkpoint is `nvidia/Qwen3.8-27B-NVFP4`).
+- Optional **ntfy push notifications** for the phone: with `NTFY_ENABLED=true` in `agent_canvas_native/.env`, `run.sh` also starts the notifier daemon (and the per-PC ntfy server from `ntfy/`) that pings you when your agent finishes, needs input, or errors. See `agent_canvas_native/README.md` → *Notifications (ntfy)*.
 
 | Variable             | Default                | Description                                                                 |
 |----------------------|------------------------|-----------------------------------------------------------------------------|
@@ -141,3 +145,25 @@ a target project's root for OpenCode to pick up project-specific rules.
 Generated files (`.env`, `opencode.json`, `auth.json` next to the config) are
 git-ignored; only `example.env`, `opencode.example.json`, and
 `auth.example.json` are tracked as templates.
+
+## `ntfy/`
+
+Per-PC [ntfy](https://ntfy.sh) push server (single Docker container, port
+`2020`). Pairs with the Agent Canvas notifier
+(`agent_canvas_native/ntfy_notifier.py`) to send push notifications to your
+phone when an agent finishes a turn, needs input, or hits an error. Designed
+for **multiple PCs on Tailscale**, each running its own server + notifier:
+the notifier publishes to `127.0.0.1:2020`, the phone subscribes over
+Tailscale at `http://<pc>.tail:2020/<topic>`.
+
+```bash
+cd ntfy
+cp example.env .env     # set NTFY_BASE_URL + NTFY_JWT_SECRET
+docker compose up -d    # healthcheck via docker compose ps
+```
+
+Access token creation, phone setup (Android instant delivery / iOS relay),
+security and the Firebase/custom-APK caveat are documented in
+[`ntfy/README.md`](ntfy/README.md). Enable end-to-end notifications via
+`NTFY_ENABLED=true` in `agent_canvas_native/.env` (see
+`agent_canvas_native/README.md` → *Notifications (ntfy)*).

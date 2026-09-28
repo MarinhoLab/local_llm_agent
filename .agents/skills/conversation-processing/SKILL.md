@@ -6,7 +6,7 @@ description: >-
   how to read them, and safe, fast patterns for mining/processing them without
   leaking secrets or melting the machine.
 license: MIT
-compatibility: Agent Canvas runtime state (native stack: `~/.openhands` + `agent_canvas_native/openhands-state/`)
+compatibility: "Agent Canvas runtime state (native stack: `~/.openhands` + `agent_canvas_native/openhands-state/`)"
 triggers:
   - conversations
   - conversation history

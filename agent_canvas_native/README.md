@@ -67,8 +67,9 @@ The LLM is configured in the UI, not by environment variables:
 4. **API key**: the same one `run.sh` uses for its preflight check
    (`VLLM_API_KEY` in `.env`; `local-dgx-key` by default for a local tunnel).
 5. **Model ID**: the model name vLLM is serving
-   (e.g. `qwen-local`, the alias the stack serves — the underlying checkpoint is
-   `nvidia/Qwen3.8-27B-NVFP4`).
+   (e.g. `qwen-local`, the alias the stack serves — the underlying checkpoint
+   is `nvidia/Qwen3.8-27B-NVFP4` for `MODEL_CONFIG=nvfp4` or `Qwen/Qwen3.8-27B`
+   for `MODEL_CONFIG=b16`; see `dgx_spark_host/`).
 6. **Save** — it takes effect immediately for new conversations.
 
 `run.sh` does a non-fatal preflight `curl` of the vLLM endpoint before launch.

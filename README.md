@@ -7,6 +7,11 @@ Push notifications of agent activity to your phone via
 [ntfy](https://ntfy.sh) are included (`ntfy/` + `agent_canvas_native/README.md`
 → *Notifications*).
 
+The DGX side offers two selectable checkpoint configurations (`MODEL_CONFIG`):
+the current **NVFP4** quantization from NVIDIA (`nvfp4`, default) and the
+original **BF16** Qwen checkpoint (`b16`) — see
+[`dgx_spark_host/`](#dgx_spark_host) → *Model configurations*.
+
 ## `dgx_spark_host/`
 
 Host a Qwen model via vLLM on the DGX Spark machine.
@@ -20,38 +25,67 @@ docker compose up --build
 
 The API is available at `http://localhost:8000/v1`. For shared networks, bind to `127.0.0.1` in `compose.yml`.
 
+### Model configurations
+
+The DGX side has two selectable checkpoint configurations, chosen with
+`MODEL_CONFIG`:
+
+- **`nvfp4`** (default) — `nvidia/Qwen3.8-27B-NVFP4`, NVIDIA Model Optimizer
+  NVFP4+FP8 mixed-precision quantization of the official base (~22 GB, fast
+  decode, low memory).
+- **`b16`** — `Qwen/Qwen3.8-27B`, the original Qwen checkpoint in BF16
+  (~55 GB, full precision).
+
+Both ship a 1-layer MTP head, so MTP speculative decoding is on by default for
+either. Per-preset defaults (`MODEL_NAME`, `GPU_MEMORY_UTILIZATION`,
+`SPEC_METHOD`, `NUM_SPEC_TOKENS`) are applied by `entrypoint.sh` from
+`MODEL_CONFIG` and remain overridable in `.env`. To switch, set it in
+`dgx_spark_host/.env` (or the environment) and restart:
+
+```bash
+cd dgx_spark_host
+echo 'MODEL_CONFIG=b16' >> .env     # or edit an existing .env
+docker compose -f compose.yml up --build
+```
+
 ### Environment Variables
 
-| Variable                 | Default                   | Description                                                                    |
-|--------------------------|---------------------------|--------------------------------------------------------------------------------|
-| `MODEL_NAME`             | `nvidia/Qwen3.8-27B-NVFP4` | Hugging Face model to serve                                                    |
+| Variable                 | Default                     | Description                                                                    |
+|--------------------------|-----------------------------|--------------------------------------------------------------------------------|
+| `MODEL_CONFIG`           | `nvfp4`                     | Selectable checkpoint configuration: `nvfp4` (`nvidia/Qwen3.8-27B-NVFP4`) or `b16` (`Qwen/Qwen3.8-27B`) |
+| `MODEL_NAME`             | per `MODEL_CONFIG`          | Hugging Face model to serve (default set by `MODEL_CONFIG` in `entrypoint.sh`) |
 | `SERVED_MODEL_NAME`      | `qwen-local`              | Alias exposed by the API                                                       |
 | `HOST`                   | `0.0.0.0`                 | Bind address                                                                   |
 | `PORT`                   | `8000`                    | Listen port                                                                    |
 | `API_KEY`                | `local-dgx-key`           | API key for authentication                                                     |
 | `MAX_MODEL_LEN`          | `262144`                  | Maximum sequence length                                                        |
-| `GPU_MEMORY_UTILIZATION` | `0.80`                    | Fraction of GPU memory to use                                                  |
+| `GPU_MEMORY_UTILIZATION` | per `MODEL_CONFIG`        | Fraction of GPU memory to use (0.80 for `nvfp4`, 0.70 for `b16`)               |
 | `MAX_NUM_SEQS`           | `8`                       | Maximum concurrent sequences                                                   |
 | `MAX_NUM_BATCHED_TOKENS` | `8192`                    | Max tokens per batch                                                           |
-| `SPEC_METHOD`            | `mtp`                     | Speculative decoding method (the checkpoint ships an MTP head)                 |
-| `NUM_SPEC_TOKENS`        | `5`                       | Speculative draft tokens; ~2x decode speed at 3-5, tune per workload           |
+| `SPEC_METHOD`            | per `MODEL_CONFIG`        | Speculative decoding method (`mtp`; both checkpoints ship an MTP head)         |
+| `NUM_SPEC_TOKENS`        | per `MODEL_CONFIG`        | Speculative draft tokens (5 for both; ~2x decode speed at 3-5, tune per workload) |
 | `HF_CACHE`               | `./hf-cache`              | Volume mount path for Hugging Face cache                                       |
 | `HF_TOKEN`               | *(unset)*                 | Hugging Face token for gated models                                            |
 
-All vLLM defaults are set in `Dockerfile`; override via `.env` or `compose.yml`.
+Common defaults are set in `Dockerfile`; per-checkpoint defaults are applied by
+`entrypoint.sh` from `MODEL_CONFIG`. Everything can be overridden via `.env` or
+`compose.yml`.
 
 Tuning notes (DGX Spark, GB10, 128 GB unified memory, LLM-only box):
 
-- **Model**: `nvidia/Qwen3.8-27B-NVFP4` (~22 GB, NVIDIA Model Optimizer NVFP4 +
-  FP8 mixed-precision quantization of the official `Qwen/Qwen3.8-27B` base). The
-  checkpoint ships a 1-layer MTP head, so MTP speculative decoding needs no
-  separate draft model (~2x decode speed on GB10). It is a native
-  vision-language model (`qwen3_5`, image + video) and image inputs stay
+- **Model configurations**: `MODEL_CONFIG=nvfp4` serves
+  `nvidia/Qwen3.8-27B-NVFP4` (~22 GB, NVIDIA Model Optimizer NVFP4 + FP8
+  mixed-precision quantization of the official `Qwen/Qwen3.8-27B` base) — the
+  default. `MODEL_CONFIG=b16` serves the original `Qwen/Qwen3.8-27B` in BF16
+  (~55 GB). Both ship a 1-layer MTP head, so MTP speculative decoding needs no
+  separate draft model (~2x decode speed on GB10). Both are native
+  vision-language models (`qwen3_5`, image + video) and image inputs stay
   enabled via `--limit-mm-per-prompt '{"image":4}'`; there is no
   `--language-model-only` flag in this stack.
 - **Memory**: `GPU_MEMORY_UTILIZATION` is a fraction of the unified CPU+GPU
-  pool. 0.80 is appropriate when the Spark runs nothing but the LLM; lower it
-  if you host other workloads on the box.
+  pool, defaulting to 0.80 for the `nvfp4` config and 0.70 for the larger
+  `b16` config. 0.80 is appropriate for the NVFP4 checkpoint when the Spark
+  runs nothing but the LLM; lower it if you host other workloads on the box.
 - **Concurrency**: `MAX_NUM_SEQS` is 8 in this stack. Early measurements
   suggested the per-token bandwidth tax above 4 in-flight decodes outweighed
   continuous-batching gains on GB10; the value was raised to 8 and is kept
@@ -76,7 +110,7 @@ the local filesystem (there is no container sandbox).
 ```
 
 - Address `http://localhost:8020` (avoids 8000, the vLLM tunnel).
-- LLM profile: Settings → LLM, provider **OpenAI-compatible**, base `http://localhost:8000/v1`, key `local-dgx-key`, model `qwen-local` (the alias the stack serves; the underlying checkpoint is `nvidia/Qwen3.8-27B-NVFP4`).
+- LLM profile: Settings → LLM, provider **OpenAI-compatible**, base `http://localhost:8000/v1`, key `local-dgx-key`, model `qwen-local` (the alias the stack serves; the underlying checkpoint is `nvidia/Qwen3.8-27B-NVFP4` for `MODEL_CONFIG=nvfp4` or `Qwen/Qwen3.8-27B` for `MODEL_CONFIG=b16`).
 - Optional **ntfy push notifications** for the phone: with `NTFY_ENABLED=true` in `agent_canvas_native/.env`, `run.sh` also starts the notifier daemon (and the per-PC ntfy server from `ntfy/`) that pings you when your agent finishes, needs input, or errors. See `agent_canvas_native/README.md` → *Notifications (ntfy)*.
 
 | Variable             | Default                | Description                                                                 |
@@ -132,7 +166,7 @@ a target project's root for OpenCode to pick up project-specific rules.
 | `OPENCODE_PROVIDER_ID`   | `dgx-vllm`                  | Provider ID; the key in `opencode.json` and `auth.json` — all three must match   |
 | `OPENCODE_PROVIDER_NAME` | `DGX Spark vLLM`            | Display name in the OpenCode model picker (quote it in `.env` — it is sourced)   |
 | `OPENCODE_MODEL_ID`      | `qwen-local`                | Model ID exactly as vLLM serves it (from `GET /v1/models`)                       |
-| `OPENCODE_MODEL_NAME`    | `Qwen3.8-27B-NVFP4`       | Model display name in the picker                                                  |
+| `OPENCODE_MODEL_NAME`    | `Qwen3.8-27B`             | Model display name in the picker (same for both `MODEL_CONFIG` options)          |
 | `OPENCODE_BASE_URL`      | `http://127.0.0.1:8000/v1`  | vLLM API as reachable from THIS machine (tunnel port is derived from it)         |
 | `OPENCODE_API_KEY`       | `local-dgx-key`             | Must match the vLLM server's `API_KEY`; written to the git-ignored `auth.json`   |
 | `OPENCODE_CONTEXT_LENGTH`| `262144`                    | Model context window in tokens                                                    |

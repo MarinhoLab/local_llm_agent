@@ -4,8 +4,8 @@ Guidance for AI agents (and humans) working in this repository.
 
 ## Project overview
 
-`local_llm_agent` runs **Qwen3.8-27B (`nvidia/Qwen3.8-27B-NVFP4`, NVIDIA's NVFP4 + FP8 quantization of the official `Qwen/Qwen3.8-27B`)** on an **NVIDIA DGX Spark** (GB10, 128 GB unified memory, aarch64) via vLLM, and drives it from **macOS** through **OpenHands**
-over an SSH tunnel (or a plain terminal via **OpenCode**).
+`local_llm_agent` runs **Qwen3.8-27B** on an **NVIDIA DGX Spark** (GB10, 128 GB unified memory, aarch64) via vLLM, and drives it from **macOS** through **OpenHands**
+over an SSH tunnel (or a plain terminal via **OpenCode**). The DGX side offers two selectable checkpoint configurations (`MODEL_CONFIG` in `dgx_spark_host/`): **`nvfp4`** (default) — `nvidia/Qwen3.8-27B-NVFP4`, NVIDIA's NVFP4 + FP8 quantization of the official `Qwen/Qwen3.8-27B` — and **`b16`** — the original `Qwen/Qwen3.8-27B` checkpoint in BF16.
 
 Three self-contained stacks plus a notification sidecar:
 
@@ -38,7 +38,8 @@ Three self-contained stacks plus a notification sidecar:
   tax above ~4 in-flight decodes outweighed continuous-batching gains, but the
   value was raised to 8 for multi-agent use; if multi-agent latency regresses,
   drop it back toward 4 via `.env`.
-- **The DGX Spark runs the LLM only.** `GPU_MEMORY_UTILIZATION=0.80` relies on
+- **The DGX Spark runs the LLM only.** `GPU_MEMORY_UTILIZATION` defaults to
+  0.80 for `MODEL_CONFIG=nvfp4` and 0.70 for `MODEL_CONFIG=b16`, and relies on
   nothing else sharing the unified memory pool. If the Spark gains other
   workloads, lower it.
 - Quality over speed: agentic tool-calling quality (vLLM tool-eval ~90/100 for this
@@ -46,11 +47,13 @@ Three self-contained stacks plus a notification sidecar:
 
 ## Key tuning decisions (why they exist)
 
-- **Model**: `nvidia/Qwen3.8-27B-NVFP4` (NVIDIA Model Optimizer NVFP4 + FP8
-  mixed-precision quantization of the official `Qwen/Qwen3.8-27B` base, ~22 GB).
-  It ships a built-in **1-layer MTP head** (`text_config.mtp_num_hidden_layers: 1`,
-  `mtp.layers.0.*` tensors in `model.safetensors.index.json`), so speculative
-  decoding needs only
+- **Model**: selectable via `MODEL_CONFIG` in `dgx_spark_host/entrypoint.sh`:
+  `nvfp4` (default) serves `nvidia/Qwen3.8-27B-NVFP4` (NVIDIA Model Optimizer
+  NVFP4 + FP8 mixed-precision quantization of the official `Qwen/Qwen3.8-27B`
+  base, ~22 GB); `b16` serves the original `Qwen/Qwen3.8-27B` in BF16 (~55 GB).
+  Both checkpoints ship a built-in **1-layer MTP head**
+  (`text_config.mtp_num_hidden_layers: 1`, `mtp.layers.0.*` tensors in
+  `model.safetensors.index.json`), so speculative decoding needs only
   `--speculative-config '{"method":"mtp","num_speculative_tokens":5}'` — no
   `model` field, no separate download. MTP roughly doubles decode on GB10.
 - **vLLM image**: `vllm/vllm-openai:nightly`. Qwen3.8 uses the `qwen3_5`
@@ -100,7 +103,9 @@ Three self-contained stacks plus a notification sidecar:
 ```bash
 # DGX Spark side
 cd dgx_spark_host
-docker compose -f compose.yml up --build     # first run downloads ~22 GB of weights
+docker compose -f compose.yml up --build     # first run downloads the weights
+# switch checkpoint configuration (nvfp4 is the default; b16 = original BF16):
+echo 'MODEL_CONFIG=b16' >> .env && docker compose -f compose.yml up --build
 
 # Agent Canvas side (macOS, SSH tunnel first: ssh -N -L 8000:localhost:8000 USER@DGX_SPARK_IP)
 ./agent_canvas_native/install.sh   # one-time (upgrades on re-run)
@@ -135,8 +140,11 @@ bash -n agent_canvas_native/install.sh agent_canvas_native/run.sh
   (conversations, workspaces, terminal history, logs) and is git-ignored. The
   LLM profile, session API key, and encryption key live in `~/.openhands`
   (also git-ignored / outside the repo).
-- All runtime defaults live as `ENV` in `dgx_spark_host/Dockerfile`;
-  `entrypoint.sh` only composes the `vllm serve` command from those variables.
-  Keep the README's env-var tables in sync when adding or changing defaults.
+- All common runtime defaults live as `ENV` in `dgx_spark_host/Dockerfile`;
+  per-checkpoint defaults (`MODEL_NAME`, `GPU_MEMORY_UTILIZATION`,
+  `SPEC_METHOD`, `NUM_SPEC_TOKENS`) are applied by `entrypoint.sh` from the
+  `MODEL_CONFIG` selection. `entrypoint.sh` composes the `vllm serve` command
+  from those variables. Keep the README's env-var tables in sync when adding
+  or changing defaults.
 - Config changes should stay overridable via environment variables — no
   hard-coded per-machine values.

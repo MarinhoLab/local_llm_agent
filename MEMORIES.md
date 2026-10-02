@@ -493,3 +493,84 @@ is unpinned, so a rebuild can drift — record the working nightly tag if
 reproducible builds are needed. The "~2x decode" figure for MTP at
 `NUM_SPEC_TOKENS=5` was carried over from the earlier FP8 measurements; re-measure
 if the NVFP4 repack changes decode behaviour.
+
+### 2026-09-30 — Third DGX option: Qwen3.8 Flash DGX UltraFast (`flash_ultrafast`)
+
+Added a **third DGX-side configuration**, `dgx_spark_host/flash_ultrafast/`,
+running the [dime-online/qwen3.8-Flash-DGX-UltraFast](https://github.com/dime-online/qwen3.8-Flash-DGX-UltraFast)
+**v16b** recipe. It joins the two `MODEL_CONFIG` checkpoint presets (`nvfp4` /
+`b16`) already added to the standard `dgx_spark_host/` stack.
+
+**Why a separate substack, not a third `MODEL_CONFIG` value:** `nvfp4` and `b16`
+are plain Hugging Face checkpoints served by the same standard
+`vllm/vllm-openai:nightly` image via the shared `entrypoint.sh` `vllm serve` —
+so they fit a `MODEL_NAME`-style switch. The UltraFast recipe is fundamentally
+different and would be misleading to fold into that mechanism:
+
+- a **patched vLLM image** (`qwen38-flash-dgx:iter6d-20260910`), built from the
+  upstream's staged Dockerfiles (`iter6c` → `iter6d`) on top of
+  `vllm/vllm-openai:qwen38-flash-next@sha256:fc120e…` — CUDA 13.0, custom
+  low-latency SM12x GEMM, Mamba/PLE/MTP kernels, piecewise CUDA graphs with
+  twelve `--cc.splitting_ops`;
+- **two pinned downloads** (~135 GB total): `Saren/Qwen3.8-Flash-Next-W4A16-AutoRound-hybrid`
+  (revision `8b82f0b7…`) + `Saren/Qwen3.8-Flash-Next-ple-table-fp8`
+  (revision `50511b0a…`);
+- a **T80 dense-MTP drafter directory** that must be *built*
+  (`recipe/build/model/build.sh --run`), plus a 65,536-id draft vocabulary
+  (`draft-vocab-ids-K65536.txt.gz`);
+- a heavily pinned serve command (`VLLM_PLE_MMAP*`, `VLLM_DRAFTER_EXPERTS_FP8`,
+  `QWEN38NEXT_LOW_LATENCY_GEMM`, `VLLM_VERIFY_TOPK_TRITON`, `KEEP_DRAFT_BLOCKS`,
+  `--kv-cache-memory-bytes 16g`, `--gpu-memory-utilization 0.01`, MTP depth 3,
+  block rejection + probabilistic draft sampling, `qwen3_xml` tool parser).
+
+The W4A16 target keeps an FP8 PLE table **memory-mapped from storage**
+(`VLLM_PLE_MMAP=1`), so it stays ~71 GiB resident with a 16 GB KV pool at the
+262,144-token context. Speed comes from the MTP drafter (block rejection), not
+lower-bit target weights — output distribution is preserved (upstream: 93% on a
+492-item suite; teacher-forced agreement within the noise band).
+
+**What was added (this repo):**
+- `flash_ultrafast/entrypoint.sh` — thin wrapper that assembles the pinned
+  v16b `vllm serve` command from env vars and preflights the three mounted
+  assets (checkpoint, PLE table, draft vocab). Defaults = promoted v16b values;
+  every value overridable via `.env`.
+- `flash_ultrafast/compose.yml` — runs the **fixed** upstream image (not
+  rebuilt here), mounts the assets read-only, sets the ~30 pinned PLE/MTP/tuning
+  env vars, exposes port 8000, `shm_size: 16g`, `ipc: host`.
+- `flash_ultrafast/setup-upstream.sh` — the one-time Spark-side prep: clones the
+  upstream repo, installs the `hf` CLI, downloads the pinned checkpoint + PLE
+  table, builds the patched image, builds the T80 drafter, installs the draft
+  vocab, then verifies. Delegates the heavy build/download work to the upstream
+  Apache-2.0 scripts rather than vendoring them (no image patches/weights are
+  committed to this repo).
+- `flash_ultrafast/README.md` — provenance, upstream claims, setup/run/switch,
+  override table.
+- Docs: top-level `README.md` (three-option table + `### flash_ultrafast`
+  subsection), `AGENTS.md` (overview, stack list, Key-tuning-decisions,
+  conventions, Common commands).
+
+**Serving identity:** alias **`qwen`** (not `qwen-local`) on port 8000 — the
+three DGX options share port 8000, so run only ONE at a time. The
+`nvfp4`/`b16` and `flash_ultrafast` stacks are distinct compose projects and do
+**not** auto-stop each other; stop the other first (`docker compose -f
+../compose.yml down`). Clients (Agent Canvas / OpenCode) point at model `qwen`
+when this option is active.
+
+**Verification done here:** `bash -n` on the new entrypoint and setup script;
+`docker compose config` renders the pinned image + env for the substack. The
+entrypoint preflight path (assets present / missing) and arg-list assembly were
+checked by reading against the upstream `serve.sh`/`env` (SPLITS, PLE, MTP,
+prefix-cache, pinned-prompt branches). NOT run on a GPU: the patched image, the
+~135 GB downloads, the drafter build, and the actual 74/212 tok/s numbers all
+require the Spark. Re-verify the upstream's measurements on real hardware.
+
+**Caveats / re-verify on the Spark:** the promoted v16b image tag
+`qwen38-flash-dgx:iter6d-20260910` is a moving target only if the upstream
+re-releases it — `setup-upstream.sh` builds it from pinned parent
+`sha256:fc120e…`, so it is reproducible from upstream source. Changing ANY
+pinned value (KV bytes, seqs, MTP depth, batched tokens, `GPU_MEM`) creates a
+new variant whose speed/quality must be measured separately per upstream docs —
+keep the promoted values for the published throughput. The 65,536-id draft
+vocab is English/code-weighted: non-English (notably CJK) output gets lower
+draft *acceptance* (slower) but unchanged *quality*. Upstream is a **fork**;
+the model weights carry their own terms — check them before serving.

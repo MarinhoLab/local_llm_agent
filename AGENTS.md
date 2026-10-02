@@ -4,13 +4,16 @@ Guidance for AI agents (and humans) working in this repository.
 
 ## Project overview
 
-`local_llm_agent` runs **Qwen3.8-27B** on an **NVIDIA DGX Spark** (GB10, 128 GB unified memory, aarch64) via vLLM, and drives it from **macOS** through **OpenHands**
-over an SSH tunnel (or a plain terminal via **OpenCode**). The DGX side offers two selectable checkpoint configurations (`MODEL_CONFIG` in `dgx_spark_host/`): **`nvfp4`** (default) — `nvidia/Qwen3.8-27B-NVFP4`, NVIDIA's NVFP4 + FP8 quantization of the official `Qwen/Qwen3.8-27B` — and **`b16`** — the original `Qwen/Qwen3.8-27B` checkpoint in BF16.
+`local_llm_agent` runs a Qwen model on an **NVIDIA DGX Spark** (GB10, 128 GB unified memory, aarch64) via vLLM, and drives it from **macOS** through **OpenHands**
+over an SSH tunnel (or a plain terminal via **OpenCode**). The DGX side offers three serving options on port 8000 (run one at a time): two selectable checkpoint configurations (`MODEL_CONFIG` in `dgx_spark_host/`) — **`nvfp4`** (default) serving `nvidia/Qwen3.8-27B-NVFP4` (NVIDIA's NVFP4 + FP8 quantization of the official `Qwen/Qwen3.8-27B`) and **`b16`** serving the original `Qwen/Qwen3.8-27B` in BF16 — plus a third, separate substack **`flash_ultrafast`** (`dgx_spark_host/flash_ultrafast/`) that runs the [Qwen3.8 Flash DGX UltraFast v16b recipe](https://github.com/dime-online/qwen3.8-Flash-DGX-UltraFast) (patched image + W4A16/FP8 AutoRound-hybrid checkpoint + dense MTP drafter, alias `qwen`).
 
 Three self-contained stacks plus a notification sidecar:
 
 - `dgx_spark_host/` — vLLM server (Docker image + compose + entrypoint). Serves the
-  model at `:8000/v1` on the Spark.
+  model at `:8000/v1` on the Spark. The standard stack offers two checkpoint
+  configurations (`MODEL_CONFIG=nvfp4|b16`); the throughput option
+  `dgx_spark_host/flash_ultrafast/` is a separate self-contained substack
+  (its own image/env/entrypoint, same port, alias `qwen`).
 - `agent_canvas_native/` — [Agent Canvas](https://docs.openhands.dev/openhands/usage/agent-canvas/setup)
   (UI + agent-server + automation server + ingress) running as local processes via
   Node.js ≥ 22.12 and `uv`, with **no Docker**; also reaches vLLM through the
@@ -56,6 +59,19 @@ Three self-contained stacks plus a notification sidecar:
   `model.safetensors.index.json`), so speculative decoding needs only
   `--speculative-config '{"method":"mtp","num_speculative_tokens":5}'` — no
   `model` field, no separate download. MTP roughly doubles decode on GB10.
+- **Model (third option, `flash_ultrafast`)**: the throughput path is the
+  [dime-online/qwen3.8-Flash-DGX-UltraFast](https://github.com/dime-online/qwen3.8-Flash-DGX-UltraFast)
+  **v16b** recipe, kept as a separate self-contained substack
+  (`dgx_spark_host/flash_ultrafast/`). It is NOT a `MODEL_CONFIG` value because
+  it requires a different (patched) vLLM image, two extra downloads (~135 GB:
+  W4A16/FP8 AutoRound-hybrid checkpoint + FP8 PLE table), a built T80 dense-MTP
+  drafter, and ~30 pinned env/serve settings. Its speed comes from the MTP
+  drafter (block rejection), not lower-bit target weights — output quality is
+  preserved. It serves the alias `qwen` (vs `qwen-local`) on the same port 8000;
+  run only one DGX configuration at a time. Upstream claims: 74 tok/s single
+  stream / 212 aggregate at 8 streams; ~71 GiB resident, 16 GB KV. The Apache-2.0
+  upstream is the source of truth for the image build and the pinned values —
+  `setup-upstream.sh` delegates to it; do not re-vendor or re-tune here.
 - **vLLM image**: `vllm/vllm-openai:nightly`. Qwen3.8 uses the `qwen3_5`
   hybrid-attention architecture (linear + full attention layers), which a
   pinned stable release may predate, so the stack tracks a nightly build rather
@@ -107,6 +123,12 @@ docker compose -f compose.yml up --build     # first run downloads the weights
 # switch checkpoint configuration (nvfp4 is the default; b16 = original BF16):
 echo 'MODEL_CONFIG=b16' >> .env && docker compose -f compose.yml up --build
 
+# Third option: Qwen3.8 Flash DGX UltraFast (separate substack; one-time setup first,
+# stop the MODEL_CONFIG stack first — they share port 8000)
+cd dgx_spark_host/flash_ultrafast
+./setup-upstream.sh                      # one-time: ~135 GB downloads + image/drafter build
+docker compose -f compose.yml up --build
+
 # Agent Canvas side (macOS, SSH tunnel first: ssh -N -L 8000:localhost:8000 USER@DGX_SPARK_IP)
 ./agent_canvas_native/install.sh   # one-time (upgrades on re-run)
 ./agent_canvas_native/run.sh       # UI: http://localhost:8020
@@ -145,6 +167,7 @@ bash -n agent_canvas_native/install.sh agent_canvas_native/run.sh
   `SPEC_METHOD`, `NUM_SPEC_TOKENS`) are applied by `entrypoint.sh` from the
   `MODEL_CONFIG` selection. `entrypoint.sh` composes the `vllm serve` command
   from those variables. Keep the README's env-var tables in sync when adding
-  or changing defaults.
+  or changing defaults. The `flash_ultrafast/` substack is self-contained (own
+  compose/entrypoint/pinned env); sync its README when its parameters change.
 - Config changes should stay overridable via environment variables — no
   hard-coded per-machine values.

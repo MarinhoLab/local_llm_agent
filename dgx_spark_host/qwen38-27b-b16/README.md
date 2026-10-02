@@ -23,7 +23,8 @@ The API is available at `http://localhost:8000/v1`, served under the alias
 
 ## Environment Variables
 
-Defaults live in `Dockerfile`; override via `.env` or `compose.yml`.
+Defaults live in `Dockerfile`; override via this folder's `.env` (passed into
+the container by `compose.yml`'s `env_file`) or `compose.yml`.
 
 | Variable                 | Default              | Description                                              |
 |--------------------------|----------------------|----------------------------------------------------------|
@@ -33,7 +34,7 @@ Defaults live in `Dockerfile`; override via `.env` or `compose.yml`.
 | `PORT`                   | `8000`             | Listen port                                              |
 | `API_KEY`                | `local-dgx-key`    | API key for authentication                               |
 | `MAX_MODEL_LEN`          | `262144`           | Maximum sequence length (native max of the checkpoint)   |
-| `GPU_MEMORY_UTILIZATION` | `0.70`             | Fraction of GPU memory to use (lower than the NVFP4 stack because the BF16 weights are ~2.5x larger) |
+| `GPU_MEMORY_UTILIZATION` | `0.70`             | Fraction of the unified memory pool vLLM may use for weights + KV cache (see Tuning notes) |
 | `MAX_NUM_SEQS`           | `8`                | Maximum concurrent sequences                             |
 | `MAX_NUM_BATCHED_TOKENS` | `8192`             | Max tokens per batch                                     |
 | `SPEC_METHOD`            | `mtp`              | Speculative decoding method (the checkpoint ships an MTP head) |
@@ -47,9 +48,14 @@ Defaults live in `Dockerfile`; override via `.env` or `compose.yml`.
   so MTP speculative decoding needs no separate draft model (~2x decode speed
   on GB10). It is a native vision-language model (`qwen3_5`, image + video) and
   image inputs stay enabled via `--limit-mm-per-prompt '{"image":4}'`.
-- **Memory**: `GPU_MEMORY_UTILIZATION=0.70` accounts for the larger BF16
-  weights (~56 GB) plus KV headroom at the 262144-token context. Assumes the
-  Spark runs nothing but the LLM; lower it if you host other workloads.
+- **Memory**: `GPU_MEMORY_UTILIZATION` caps vLLM's *total* footprint
+  (weights + activations + KV cache), so the ~2.5x larger BF16 weights
+  (~52 GiB) leave *less* KV room at a given fraction, not more. At 0.70 of
+  the ~120 GiB pool that is roughly 25 GiB of KV — with the fp8 KV cache
+  (16 full-attention layers, 4 KV heads x 256) at ~32 KiB/token, about three
+  full 262144-token sequences. Raise it toward the NVFP4 stack's 0.80 if
+  long concurrent contexts run out of KV blocks; lower it if you host other
+  workloads on the Spark.
 - **Concurrency**: `MAX_NUM_SEQS=8`; early GB10 measurements suggested the
   per-token bandwidth tax above ~4 in-flight decodes outweighed continuous
   batching — drop it back down if multi-agent latency regresses.

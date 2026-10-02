@@ -24,7 +24,8 @@ The API is available at `http://localhost:8000/v1`, served under the alias
 
 ## Environment Variables
 
-Defaults live in `Dockerfile`; override via `.env` or `compose.yml`.
+Defaults live in `Dockerfile`; override via this folder's `.env` (passed into
+the container by `compose.yml`'s `env_file`) or `compose.yml`.
 
 | Variable                 | Default                     | Description                                              |
 |--------------------------|-----------------------------|----------------------------------------------------------|

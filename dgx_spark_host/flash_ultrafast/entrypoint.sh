@@ -10,7 +10,8 @@
 # the mounted assets.
 #
 # Pinned defaults below are the upstream promoted v16b values
-# (recipe/config/v16b/env + serve.sh). Every value is overridable via .env.
+# (recipe/config/v16b/env + serve.sh). Every value is overridable via this
+# stack's .env (compose.yml passes it into the container via env_file).
 
 set -euo pipefail
 
@@ -81,8 +82,9 @@ args=(
   --reasoning-parser "${REASONING_PARSER}"
 )
 
-# Prefix caching (on by default in v16b).
-if [ "${PREFIX_CACHE}" = "1" ]; then args+=(--enable-prefix-caching); fi
+# Prefix caching (on by default in v16b). vLLM enables it by default, so
+# PREFIX_CACHE=0 must pass the explicit opt-out, as upstream serve.sh does.
+if [ "${PREFIX_CACHE}" = "1" ]; then args+=(--enable-prefix-caching); else args+=(--no-enable-prefix-caching); fi
 
 # CUDA-graph compilation flags (the -cc. prefixed pair).
 args+=("-cc.cudagraph_mode=${CC_CUDAGRAPH_MODE}" "-cc.splitting_ops=${CC_SPLITTING_OPS}")

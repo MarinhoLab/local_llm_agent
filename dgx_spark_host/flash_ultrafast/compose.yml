@@ -6,7 +6,7 @@
 # pinned v16b serve parameters from
 # https://github.com/dime-online/qwen3.8-Flash-DGX-UltraFast.
 #
-# ONE-TIME (on the Spark, ~135 GB downloads + image/drafter build):
+# ONE-TIME (on the Spark, ~130 GB downloads + image/drafter build):
 #   ./setup-upstream.sh
 # Then:
 #   docker compose -f compose.yml up --build
@@ -38,10 +38,17 @@ services:
       - ${FLASH_TABLE_HOST:-$HOME/models/ple-table-fp8}:/ple-table:ro
       - ${FLASH_VOCAB_HOST:-$HOME/.cache/qwen38-v16b/draft-vocab-ids-K65536.txt}:/draft-vocab/ids.txt:ro
 
+    # Pass the optional .env into the container, so entrypoint.sh also sees the
+    # overrides not listed below (SPEC_EXTRA, PIN_PROMPT, PIN_MAX_FRACTION,
+    # LOAD_FORMAT, REASONING_PARSER, CC_*). Entries under `environment:` win.
+    env_file:
+      - path: .env
+        required: false
+
     environment:
       # --- PLE memory-mapped table (the W4A16 target's PLE table stays in
-      #     storage and is read via mmap; this is what leaves room for the KV
-      #     pool and makes the config ~71 GiB-resident) ---
+      #     storage and is read via mmap; this is what leaves room for the
+      #     16 GB KV pool) ---
       - VLLM_PLE_MMAP=1
       - VLLM_PLE_MMAP_DIR=/ple-table
       - VLLM_PLE_MMAP_WORKERS=${PLE_WORKERS:-32}

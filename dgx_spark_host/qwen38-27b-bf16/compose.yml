@@ -2,11 +2,11 @@
 # Self-contained per-model stack: start with `docker compose -f compose.yml up --build`.
 
 services:
-  qwen-b16-vllm:
+  qwen-bf16-vllm:
     build:
       context: .
       dockerfile: Dockerfile
-    container_name: dgx-qwen-b16-vllm
+    container_name: dgx-qwen-bf16-vllm
 
     # Requires NVIDIA Container Toolkit on the DGX Spark host.
     gpus: all

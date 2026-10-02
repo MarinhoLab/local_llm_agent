@@ -5,7 +5,7 @@ Guidance for AI agents (and humans) working in this repository.
 ## Project overview
 
 `local_llm_agent` runs a Qwen model on an **NVIDIA DGX Spark** (GB10, 128 GB unified memory, aarch64) via vLLM, and drives it from **macOS** through **OpenHands**
-over an SSH tunnel (or a plain terminal via **OpenCode**). The DGX side has one self-contained stack per model under `dgx_spark_host/`, all on port 8000 (run one at a time): **`qwen38-27b-nvfp4`** (the current default) serving `nvidia/Qwen3.8-27B-NVFP4` (NVIDIA's NVFP4 + FP8 quantization of the official `Qwen/Qwen3.8-27B`), **`qwen38-27b-b16`** serving the original `Qwen/Qwen3.8-27B` in BF16, and **`flash_ultrafast`** running the [Qwen3.8 Flash DGX UltraFast v16b recipe](https://github.com/dime-online/qwen3.8-Flash-DGX-UltraFast) (patched image + W4A16/FP8 AutoRound-hybrid checkpoint + dense MTP drafter, alias `qwen`). The stacks are fully isolated — own image, compose, entrypoint, and defaults; the two 3.8 stacks share no code or parameters.
+over an SSH tunnel (or a plain terminal via **OpenCode**). The DGX side has one self-contained stack per model under `dgx_spark_host/`, all on port 8000 (run one at a time): **`qwen38-27b-nvfp4`** (the current default) serving `nvidia/Qwen3.8-27B-NVFP4` (NVIDIA's NVFP4 + FP8 quantization of the official `Qwen/Qwen3.8-27B`), **`qwen38-27b-b16`** serving the original `Qwen/Qwen3.8-27B` in BF16, and **`flash_ultrafast`** running the [Qwen3.8 Flash DGX UltraFast v16b recipe](https://github.com/dime-online/qwen3.8-Flash-DGX-UltraFast) (patched image + W4A16/FP8 AutoRound-hybrid checkpoint + dense MTP drafter, alias `qwen-local`). The stacks are fully isolated — own image, compose, entrypoint, and defaults; the two 3.8 stacks share no code or parameters.
 
 Three self-contained stacks plus a notification sidecar:
 
@@ -18,7 +18,7 @@ Three self-contained stacks plus a notification sidecar:
   - `qwen38-27b-b16/` — `Qwen/Qwen3.8-27B` (official BF16, ~55 GB), served as
     `qwen-local`.
   - `flash_ultrafast/` — the [Qwen3.8 Flash DGX UltraFast v16b recipe](https://github.com/dime-online/qwen3.8-Flash-DGX-UltraFast)
-    (patched image + W4A16/FP8 checkpoint + MTP drafter), served as `qwen`.
+    (patched image + W4A16/FP8 checkpoint + MTP drafter), served as `qwen-local`.
 - `agent_canvas_native/` — [Agent Canvas](https://docs.openhands.dev/openhands/usage/agent-canvas/setup)
   (UI + agent-server + automation server + ingress) running as local processes via
   Node.js ≥ 22.12 and `uv`, with **no Docker**; also reaches vLLM through the
@@ -77,8 +77,8 @@ Three self-contained stacks plus a notification sidecar:
   (~135 GB: W4A16/FP8 AutoRound-hybrid checkpoint + FP8 PLE table), a built
   T80 dense-MTP drafter, and ~30 pinned env/serve settings. Its speed comes
   from the MTP drafter (block rejection), not lower-bit target weights —
-  output quality is preserved. It serves the alias `qwen` (vs `qwen-local`)
-  on the same port 8000; run only one stack at a time. Upstream claims: 74
+  output quality is preserved. It serves the same alias `qwen-local` as the
+  other stacks on the same port 8000; run only one stack at a time. Upstream claims: 74
   tok/s single stream / 212 aggregate at 8 streams; ~71 GiB resident, 16 GB
   KV. The Apache-2.0 upstream is the source of truth for the image build and
   the pinned values — `setup-upstream.sh` delegates to it; do not re-vendor or

@@ -62,8 +62,9 @@ docker compose -f compose.yml up --build
 curl http://localhost:8000/v1/models
 ```
 
-Served model alias is **`qwen`** (not `qwen-local`). It accepts text, image
-(`image_url`) and video (`video_url`).
+Served model alias is **`qwen-local`** (the same alias the 27B stacks use, so
+clients need no changes). It accepts text, image (`image_url`) and video
+(`video_url`).
 
 > **Port 8000 is shared** with the two 27B stacks
 > (`../qwen38-27b-nvfp4/`, `../qwen38-27b-b16/`). Run only ONE of the three
@@ -72,10 +73,10 @@ Served model alias is **`qwen`** (not `qwen-local`). It accepts text, image
 
 ## Clients
 
-The Agent Canvas / OpenCode clients key off the served model alias, so point
-them at model **`qwen`** on this stack (base URL and API key unchanged). See
-`../README.md` for the Agent Canvas LLM-profile example and
-`../../opencode_client/example.env` for OpenCode (`OPENCODE_MODEL_ID=qwen`).
+The Agent Canvas / OpenCode clients key off the served model alias, and this
+stack uses the same **`qwen-local`** alias as the 27B stacks, so clients need
+no changes (see `../README.md` for the Agent Canvas LLM-profile example and
+`../../opencode_client/example.env` for OpenCode).
 
 ## Overriding the pinned values
 
@@ -85,7 +86,7 @@ The promoted v16b values are the defaults here; they are overridable via
 | Variable | v16b default | Meaning |
 |---|---|---|
 | `FLASH_IMAGE` | `qwen38-flash-dgx:iter6d-20260910` | Patched image (pinned by upstream) |
-| `SERVED_NAME` | `qwen` | API model alias |
+| `SERVED_NAME` | `qwen-local` | API model alias (same as the 27B stacks — clients need no changes) |
 | `CTX` | `262144` | Max model length |
 | `SEQS` | `8` | Max concurrent sequences |
 | `GPU_MEM` | `0.01` | Fraction (KV is set explicitly, not by this fraction) |

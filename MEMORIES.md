@@ -659,3 +659,18 @@ Checked against the upstream UltraFast repo (`recipe/config/v16b`,
 `.env` values now appear in the container environment, 0 of them before);
 stub `vllm` run of the flash entrypoint with `PREFIX_CACHE=1/0`; stub `hf`
 run of the setup download step. Not run on a GPU.
+
+### 2026-10-02 — `qwen38-27b-b16` renamed to `qwen38-27b-bf16`
+
+The folder serves the BF16 checkpoint, so "b16" was a misnomer. Renamed the
+folder to `dgx_spark_host/qwen38-27b-bf16/`, the compose service to
+`qwen-bf16-vllm`, and the container to `dgx-qwen-bf16-vllm`, and updated every
+reference (READMEs, `AGENTS.md`, the docker-usage skill,
+`opencode_client/example.env`). Earlier MEMORIES entries that say `b16` are
+history. Migration: `docker compose down` the old stack from the old folder
+before switching (a running `dgx-qwen-b16-vllm` would still hold port 8000),
+and move any `.env` / `hf-cache` from the old folder into the new one.
+
+**Verification:** `bash -n` on the entrypoint; `docker compose config` renders
+with service `qwen-bf16-vllm` / container `dgx-qwen-bf16-vllm`; no `b16`
+references remain outside this history file.

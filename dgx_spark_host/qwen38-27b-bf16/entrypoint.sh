@@ -8,7 +8,7 @@ set -euo pipefail
 
 SPECULATIVE_CONFIG='{"method":"'"${SPEC_METHOD}"'","num_speculative_tokens":'"${NUM_SPEC_TOKENS}"'}'
 
-echo "[entrypoint] B16 stack: MODEL_NAME=${MODEL_NAME}  gpu_mem_util=${GPU_MEMORY_UTILIZATION}" >&2
+echo "[entrypoint] BF16 stack: MODEL_NAME=${MODEL_NAME}  gpu_mem_util=${GPU_MEMORY_UTILIZATION}" >&2
 
 exec vllm serve "${MODEL_NAME}"   \
 --host "${HOST}" \

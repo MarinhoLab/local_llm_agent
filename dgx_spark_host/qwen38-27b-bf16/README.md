@@ -35,7 +35,7 @@ the container by `compose.yml`'s `env_file`) or `compose.yml`.
 | `API_KEY`                | `local-dgx-key`    | API key for authentication                               |
 | `MAX_MODEL_LEN`          | `262144`           | Maximum sequence length (native max of the checkpoint)   |
 | `GPU_MEMORY_UTILIZATION` | `0.80`             | Fraction of the unified memory pool vLLM may use for weights + KV cache (see Tuning notes) |
-| `MAX_NUM_SEQS`           | `8`                | Maximum concurrent sequences                             |
+| `MAX_NUM_SEQS`           | `4`                | Maximum concurrent sequences (matches the KV pool's ~4 full-context sequences) |
 | `MAX_NUM_BATCHED_TOKENS` | `8192`             | Max tokens per batch                                     |
 | `SPEC_METHOD`            | `mtp`              | Speculative decoding method (the checkpoint ships an MTP head) |
 | `NUM_SPEC_TOKENS`        | `5`                | Speculative draft tokens; ~2x decode speed at 3-5, tune per workload |
@@ -55,7 +55,10 @@ the container by `compose.yml`'s `env_file`) or `compose.yml`.
   (16 full-attention layers, 4 KV heads x 256) at ~32 KiB/token, that is
   about four full 262144-token sequences. Assumes the Spark runs nothing but
   the LLM; lower it if you host other workloads.
-- **Concurrency**: `MAX_NUM_SEQS=8`; early GB10 measurements suggested the
-  per-token bandwidth tax above ~4 in-flight decodes outweighed continuous
-  batching — drop it back down if multi-agent latency regresses.
+- **Concurrency**: `MAX_NUM_SEQS=4` (the NVFP4 stack uses 8), matching the
+  ~38 GiB KV pool's room for about four full 262144-token sequences, so four
+  concurrent agents can each reach the full context without KV preemption.
+  Early GB10 measurements also put the per-token bandwidth tax above ~4
+  in-flight decodes. Sequences share the pool, so if your contexts stay
+  well below the maximum you can raise it via `.env`.
 - **Context**: 262144 is the native max (`text_config.max_position_embeddings`).

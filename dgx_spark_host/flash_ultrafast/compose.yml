@@ -1,9 +1,9 @@
 # compose.yml — Qwen3.8 Flash DGX UltraFast (v16b) on the DGX Spark.
 #
-# This is the THIRD DGX-side configuration, alongside the two MODEL_CONFIG
-# options in ../ (nvfp4 / b16). Unlike those, it does not use the standard
-# vllm/vllm-openai nightly image: it runs the patched image and the pinned
-# v16b serve parameters from
+# Third DGX-side stack, alongside the two 27B sibling stacks (../qwen38-27b-nvfp4,
+# ../qwen38-27b-b16). Fully isolated: unlike those, it does not use the
+# standard vllm/vllm-openai nightly image: it runs the patched image and the
+# pinned v16b serve parameters from
 # https://github.com/dime-online/qwen3.8-Flash-DGX-UltraFast.
 #
 # ONE-TIME (on the Spark, ~135 GB downloads + image/drafter build):

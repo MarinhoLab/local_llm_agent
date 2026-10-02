@@ -1,17 +1,18 @@
 # Qwen3.8 Flash · DGX UltraFast (`flash_ultrafast`)
 
-Third DGX-side configuration: the [dime-online/qwen3.8-Flash-DGX-UltraFast](https://github.com/dime-online/qwen3.8-Flash-DGX-UltraFast)
+Third DGX-side stack: the [dime-online/qwen3.8-Flash-DGX-UltraFast](https://github.com/dime-online/qwen3.8-Flash-DGX-UltraFast)
 **v16b** serving recipe, run through this repo's `compose.yml`.
 
-Unlike the two `MODEL_CONFIG` options in `../` (`nvfp4` / `b16`, which are plain
-Hugging Face checkpoints served by the standard `vllm/vllm-openai:nightly`
-image), this is a **custom serving recipe**: a patched vLLM image (CUDA 13.0,
-low-latency SM12x GEMM, custom Mamba/PLE/MTP kernels) serving a W4A16/FP8
-AutoRound-hybrid checkpoint whose PLE table is memory-mapped from storage, with
-a dense T80 MTP drafter. The speed comes from that drafter plus a leaner
-per-step path — **not** from lower-bit target weights (every drafted token is
-verified by the target model via block rejection, so output quality is
-preserved).
+Unlike the two 27B sibling stacks in `../` (`qwen38-27b-nvfp4` /
+`qwen38-27b-b16`, which are plain Hugging Face checkpoints served by the
+standard `vllm/vllm-openai:nightly` image), this is a **custom serving recipe**:
+a patched vLLM image (CUDA 13.0, low-latency SM12x GEMM, custom Mamba/PLE/MTP
+kernels) serving a W4A16/FP8 AutoRound-hybrid checkpoint whose PLE table is
+memory-mapped from storage, with a dense T80 MTP drafter. The speed comes from
+that drafter plus a leaner per-step path — **not** from lower-bit target
+weights (every drafted token is verified by the target model via block
+rejection, so output quality is preserved). The stacks are fully isolated;
+this folder shares no code or parameters with them.
 
 ## Provenance
 
@@ -64,9 +65,10 @@ curl http://localhost:8000/v1/models
 Served model alias is **`qwen`** (not `qwen-local`). It accepts text, image
 (`image_url`) and video (`video_url`).
 
-> **Port 8000 is shared** with the `nvfp4`/`b16` configurations. Run only ONE
-> of the three DGX configurations at a time on the Spark — stop the others
-> first (`docker compose -f ../compose.yml down` for the MODEL_CONFIG stack).
+> **Port 8000 is shared** with the two 27B stacks
+> (`../qwen38-27b-nvfp4/`, `../qwen38-27b-b16/`). Run only ONE of the three
+> DGX stacks at a time on the Spark — stop the others first (e.g.
+> `docker compose -f ../qwen38-27b-nvfp4/compose.yml down`).
 
 ## Clients
 

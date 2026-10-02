@@ -1,0 +1,24 @@
+# compose.yml — Qwen3.8-27B BF16 (Qwen/Qwen3.8-27B) on the DGX Spark.
+# Self-contained per-model stack: start with `docker compose -f compose.yml up --build`.
+
+services:
+  qwen-b16-vllm:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: dgx-qwen-b16-vllm
+
+    # Requires NVIDIA Container Toolkit on the DGX Spark host.
+    gpus: all
+    ipc: host
+
+    environment:
+      - PYTHONUNBUFFERED=1
+
+    ports:
+      - "8000:8000"
+
+    volumes:
+      - ${HF_CACHE:-./hf-cache}:/root/.cache/huggingface
+
+    restart: unless-stopped

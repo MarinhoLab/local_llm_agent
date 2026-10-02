@@ -685,3 +685,15 @@ stack's `Dockerfile` and README and `AGENTS.md`.
 
 **Verification:** `docker compose config` + stub-`vllm` dry-run of the BF16
 entrypoint emits `--gpu-memory-utilization 0.80`. Not run on a GPU.
+
+### 2026-10-02 — BF16 stack `MAX_NUM_SEQS` limited to 4
+
+Requested: since the BF16 KV pool (~38 GiB at `GPU_MEMORY_UTILIZATION=0.80`)
+holds only about four full 262144-token sequences, cap concurrency there at
+4. `qwen38-27b-bf16` now defaults to `MAX_NUM_SEQS=4` (was 8); the NVFP4
+stack stays at 8. Updated the stack's `Dockerfile` and README and
+`AGENTS.md`. Sequences share the KV pool, so with short contexts it can be
+raised again via `.env`.
+
+**Verification:** stub-`vllm` dry-run of the BF16 entrypoint emits
+`--max-num-seqs 4`. Not run on a GPU.

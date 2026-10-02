@@ -41,11 +41,13 @@ Three self-contained stacks plus a notification sidecar:
 
 ## Deployment constraints (do not change without a reason)
 
-- **Single user, small concurrent-agent count.** `MAX_NUM_SEQS` is 8 in this
-  stack. Earlier GB10 measurements suggested the per-token memory-bandwidth
-  tax above ~4 in-flight decodes outweighed continuous-batching gains, but the
-  value was raised to 8 for multi-agent use; if multi-agent latency regresses,
-  drop it back toward 4 via `.env`.
+- **Single user, small concurrent-agent count.** `MAX_NUM_SEQS` is 8 in the
+  `qwen38-27b-nvfp4` stack and 4 in `qwen38-27b-bf16`, where the smaller KV
+  pool (~38 GiB) holds about four full 262144-token sequences. Earlier GB10
+  measurements suggested the per-token memory-bandwidth tax above ~4
+  in-flight decodes outweighed continuous-batching gains, but the NVFP4 value
+  was raised to 8 for multi-agent use; if multi-agent latency regresses, drop
+  it back toward 4 via `.env`.
 - **The DGX Spark runs the LLM only.** `GPU_MEMORY_UTILIZATION` defaults to
   0.80 in both 27B stacks (`qwen38-27b-nvfp4` and `qwen38-27b-bf16`), and
   relies on nothing else sharing the unified memory pool. If the Spark gains other workloads, lower it.

@@ -120,6 +120,16 @@ elif [ -f "$MTPDENSE_DIR/dense-mtp-build-report.json" ]; then
   # The upstream builder refuses to overwrite an existing output directory.
   echo "  already built at $MTPDENSE_DIR"
 else
+  # Upstream bug (as of 0c391a3): test_rtn_int4_gptq.py's
+  # test_safetensors_roundtrip writes a scratch file into the working dir,
+  # but build.sh runs the tests in /work, mounted read-only, so the build dies
+  # with "Read-only file system: '_iter4_st_test.safetensors.partial'".
+  # Point that one default at the container's writable /tmp (idempotent).
+  rt_test="$CLONE_DIR/recipe/build/model/test_rtn_int4_gptq.py"
+  if grep -q 'tmp="_iter4_st_test.safetensors"' "$rt_test"; then
+    warn "patching upstream test_safetensors_roundtrip to write under /tmp"
+    sed -i 's|tmp="_iter4_st_test.safetensors"|tmp="/tmp/_iter4_st_test.safetensors"|' "$rt_test"
+  fi
   env MODELS_ROOT="$MODELS_ROOT" IMAGE="$IMAGE_TAG" \
     bash "$CLONE_DIR/recipe/build/model/build.sh" --run
 fi

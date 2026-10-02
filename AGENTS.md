@@ -145,6 +145,7 @@ Sanity checks that do not need a GPU:
 
 ```bash
 bash -n dgx_spark_host/entrypoint.sh
+bash -n dgx_spark_host/flash_ultrafast/entrypoint.sh dgx_spark_host/flash_ultrafast/setup-upstream.sh
 bash -n agent_canvas_native/install.sh agent_canvas_native/run.sh
 # entrypoint dry-run: put a stub `vllm` script in PATH and run entrypoint.sh
 ```

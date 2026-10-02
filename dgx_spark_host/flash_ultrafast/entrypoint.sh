@@ -20,7 +20,7 @@ TABLE_DIR="${FLASH_TABLE_DIR:-/ple-table}"
 DRAFT_VOCAB="${FLASH_DRAFT_VOCAB:-/draft-vocab/ids.txt}"
 
 # --- v16b serving parameters (defaults = promoted values) ------------------
-: "${SERVED_NAME:=qwen}"
+: "${SERVED_NAME:=qwen-local}"
 : "${HOST:=0.0.0.0}"
 : "${PORT:=8000}"
 : "${LOAD_FORMAT:=fastsafetensors}"

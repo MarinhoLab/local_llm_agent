@@ -69,7 +69,7 @@ services:
       - VLLM_STEP_PROFILE=0
       # --- serving parameters (defaults = promoted v16b values; override in
       #     .env) ---
-      - SERVED_NAME=${SERVED_NAME:-qwen}
+      - SERVED_NAME=${SERVED_NAME:-qwen-local}
       - CTX=${CTX:-262144}
       - SEQS=${SEQS:-8}
       - GPU_MEM=${GPU_MEM:-0.01}

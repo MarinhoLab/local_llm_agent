@@ -35,6 +35,12 @@ DRAFT_VOCAB="${FLASH_DRAFT_VOCAB:-/draft-vocab/ids.txt}"
 : "${REASONING_PARSER:=qwen3}"
 : "${MAX_NUM_BATCHED_TOKENS:=8192}"
 : "${FLASHINFER_AUTOTUNE:=0}"
+# Upstream v16b passes --enable-prompt-tokens-details. It only adds
+# usage.prompt_tokens_details (cached-token counts) to API responses, and
+# OpenHands SDK < 1.50.0 (every Agent Canvas release up to 1.24.0) crashes on
+# it with "'PromptTokensDetailsWrapper' object has no attribute
+# 'cache_creation_tokens'". Off by default here; set 1 for the upstream value.
+: "${PROMPT_TOKENS_DETAILS:=0}"
 : "${PIN_PROMPT:=}"
 : "${PIN_MAX_FRACTION:=0.25}"
 # JSON defaults are set with explicit if-blocks (not `: :=`) so the quoting is
@@ -76,7 +82,6 @@ args=(
   --max-num-batched-tokens "${MAX_NUM_BATCHED_TOKENS}"
   --kv-cache-dtype auto
   --kv-cache-memory-bytes "${KV_BYTES}"
-  --enable-prompt-tokens-details
   --enable-auto-tool-choice
   --tool-call-parser "${TOOL_PARSER}"
   --reasoning-parser "${REASONING_PARSER}"
@@ -88,6 +93,10 @@ if [ "${PREFIX_CACHE}" = "1" ]; then args+=(--enable-prefix-caching); else args+
 
 # CUDA-graph compilation flags (the -cc. prefixed pair).
 args+=("-cc.cudagraph_mode=${CC_CUDAGRAPH_MODE}" "-cc.splitting_ops=${CC_SPLITTING_OPS}")
+
+# Cached-token counts in API usage (upstream v16b: on; here: off, see above).
+# Reporting only — no effect on speed or output.
+if [ "${PROMPT_TOKENS_DETAILS}" = "1" ]; then args+=(--enable-prompt-tokens-details); fi
 
 # FlashInfer autotune (off by default in v16b).
 if [ "${FLASHINFER_AUTOTUNE}" = "1" ]; then :; else args+=(--no-enable-flashinfer-autotune); fi

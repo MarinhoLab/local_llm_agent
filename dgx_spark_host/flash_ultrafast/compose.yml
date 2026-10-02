@@ -86,6 +86,9 @@ services:
       - TOOL_PARSER=${TOOL_PARSER:-qwen3_xml}
       - MAX_NUM_BATCHED_TOKENS=${MAX_NUM_BATCHED_TOKENS:-8192}
       - FLASHINFER_AUTOTUNE=${FLASHINFER_AUTOTUNE:-0}
+      # Off by default (upstream v16b: 1): OpenHands SDK < 1.50.0 crashes on
+      # the cached-token usage block it adds. Reporting only.
+      - PROMPT_TOKENS_DETAILS=${PROMPT_TOKENS_DETAILS:-0}
 
     ports:
       - "8000:8000"

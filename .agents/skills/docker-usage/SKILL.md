@@ -22,19 +22,24 @@ Agent Canvas client and the OpenCode client run **natively** (no Docker); see
 
 | Stack | Directory | Machine | What it runs | Command |
 |---|---|---|---|---|
-| vLLM server | `dgx_spark_host/` | NVIDIA DGX Spark (aarch64, GPU) | `nvidia/Qwen3.8-27B-NVFP4` served at `:8000/v1` | `docker compose -f compose.yml up --build` |
+| vLLM server | `dgx_spark_host/qwen38-27b-nvfp4/` (default stack; siblings: `qwen38-27b-b16/`, `flash_ultrafast/`) | NVIDIA DGX Spark (aarch64, GPU) | `nvidia/Qwen3.8-27B-NVFP4` served at `:8000/v1` | `docker compose -f compose.yml up --build` (from the stack folder) |
 
 The macOS-side clients reach the model over an **SSH tunnel** (see below).
 There is no Docker compose on the Mac.
 
 ## Bringing the stack up
 
-**DGX Spark (server)** — first run downloads ~22 GB of weights:
+**DGX Spark (server)** — one self-contained stack per model (port 8000, run
+one at a time). The current default is the NVFP4 stack; first run downloads
+~22 GB of weights:
 
 ```bash
-cd dgx_spark_host
+cd dgx_spark_host/qwen38-27b-nvfp4
 docker compose -f compose.yml up --build
 ```
+
+(Siblings: `qwen38-27b-b16/` for the official BF16 checkpoint, and
+`flash_ultrafast/` for the UltraFast recipe — see `dgx_spark_host/README.md`.)
 
 The API is available at `http://localhost:8000/v1` on the Spark.
 
@@ -47,8 +52,8 @@ forward the Spark's vLLM port to the Mac in a separate terminal:
 ssh -L 8000:localhost:8000 USER@DGX_SPARK_IP
 ```
 
-- `dgx_spark_host/compose.yml` publishes `8000:8000`; the tunnel maps that onto
-  the Mac's `localhost:8000`.
+- Each `dgx_spark_host/<stack>/compose.yml` publishes `8000:8000`; the tunnel
+  maps that onto the Mac's `localhost:8000`.
 - The native Agent Canvas stack (`agent_canvas_native`) and the OpenCode client
   both target `http://localhost:8000/v1` on the Mac, which resolves through the
   tunnel to the Spark.

@@ -574,3 +574,38 @@ keep the promoted values for the published throughput. The 65,536-id draft
 vocab is English/code-weighted: non-English (notably CJK) output gets lower
 draft *acceptance* (slower) but unchanged *quality*. Upstream is a **fork**;
 the model weights carry their own terms — check them before serving.
+
+### 2026-10-02 — Restructure: one self-contained stack folder per model
+
+Requested: fully isolate the three DGX-side stacks — the two Qwen3.8-27B
+models must not share parameters or code. The `MODEL_CONFIG` switch (which
+shared one `Dockerfile`/`entrypoint.sh`/`compose.yml` between `nvfp4` and
+`b16`) was removed and replaced with one self-contained folder per stack:
+
+- `dgx_spark_host/qwen38-27b-nvfp4/` — `Dockerfile` (defaults: `MODEL_NAME=
+  nvidia/Qwen3.8-27B-NVFP4`, `GPU_MEMORY_UTILIZATION=0.80`), `entrypoint.sh`,
+  `compose.yml` (container `dgx-qwen-nvfp4-vllm`), `README.md` with its own
+  env table and tuning notes. Served alias `qwen-local`.
+- `dgx_spark_host/qwen38-27b-b16/` — independent copy with `MODEL_NAME=
+  Qwen/Qwen3.8-27B` and `GPU_MEMORY_UTILIZATION=0.70` (larger BF16 weights).
+  Container `dgx-qwen-b16-vllm`. Served alias `qwen-local`.
+- `dgx_spark_host/flash_ultrafast/` — unchanged in behavior; its docs
+  updated to refer to the sibling stack folders.
+
+The old shared `dgx_spark_host/Dockerfile`, `entrypoint.sh`, and
+`compose.yml` were deleted; `MODEL_CONFIG` no longer exists anywhere. A thin
+`dgx_spark_host/README.md` index now lists the three stacks (all port 8000,
+run one at a time). Docs updated: top-level `README.md` (stack table, run
+commands, per-stack pointers), `AGENTS.md` (overview, stack list, constraints,
+Key tuning decisions, Common commands, sanity checks, conventions),
+`agent_canvas_native/README.md` (LLM-profile note), the `docker-usage` skill
+(server row + bring-up + tunnel bullets).
+
+**Consequence for existing Spark deployments:** the compose project name and
+container name change (`dgx-qwen-vllm` → `dgx-qwen-nvfp4-vllm` /
+`dgx-qwen-b16-vllm`), and each stack's `.env` (e.g. `HF_TOKEN`) now lives in
+the stack's own folder — move it when redeploying.
+
+**Verification:** `bash -n` on all entrypoints; stub-`vllm` dry-runs of the
+nvfp4 and b16 entrypoints (correct model/memory flags per stack); `docker
+compose config` renders for all three stacks.

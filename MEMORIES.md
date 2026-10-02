@@ -674,3 +674,14 @@ and move any `.env` / `hf-cache` from the old folder into the new one.
 **Verification:** `bash -n` on the entrypoint; `docker compose config` renders
 with service `qwen-bf16-vllm` / container `dgx-qwen-bf16-vllm`; no `b16`
 references remain outside this history file.
+
+### 2026-10-02 — BF16 stack `GPU_MEMORY_UTILIZATION` standardized to 0.80
+
+Requested: use the same `GPU_MEMORY_UTILIZATION` as the NVFP4 stack. The
+`qwen38-27b-bf16` default is now 0.80 (was 0.70). Since the fraction caps
+weights + KV together, this grows the BF16 KV pool from ~25 GiB to ~38 GiB
+(~four full 262144-token sequences at ~32 KiB/token fp8 KV). Updated the
+stack's `Dockerfile` and README and `AGENTS.md`.
+
+**Verification:** `docker compose config` + stub-`vllm` dry-run of the BF16
+entrypoint emits `--gpu-memory-utilization 0.80`. Not run on a GPU.

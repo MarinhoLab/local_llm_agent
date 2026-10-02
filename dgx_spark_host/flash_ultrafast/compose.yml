@@ -1,0 +1,86 @@
+# compose.yml — Qwen3.8 Flash DGX UltraFast (v16b) on the DGX Spark.
+#
+# This is the THIRD DGX-side configuration, alongside the two MODEL_CONFIG
+# options in ../ (nvfp4 / b16). Unlike those, it does not use the standard
+# vllm/vllm-openai nightly image: it runs the patched image and the pinned
+# v16b serve parameters from
+# https://github.com/dime-online/qwen3.8-Flash-DGX-UltraFast.
+#
+# ONE-TIME (on the Spark, ~135 GB downloads + image/drafter build):
+#   ./setup-upstream.sh
+# Then:
+#   docker compose -f compose.yml up --build
+#
+# Port 8000 is shared with the other configurations — run only ONE of the
+# three DGX configurations at a time on the Spark.
+
+services:
+  qwen38-flash:
+    # The measured image tag is pinned by the upstream recipe
+    # (recipe/config/v16b/image). It is produced by setup-upstream.sh from the
+    # upstream build scripts — not rebuilt here, so the speed claims map to
+    # the exact upstream measurement.
+    image: ${FLASH_IMAGE:-qwen38-flash-dgx:iter6d-20260910}
+    container_name: dgx-qwen38-flash
+    entrypoint: ["/entrypoint.sh"]
+
+    # Requires NVIDIA Container Toolkit on the DGX Spark host.
+    gpus: all
+    ipc: host
+    shm_size: 16g
+
+    # entrypoint.sh is our thin wrapper (kept in this repo); it composes the
+    # pinned v16b vllm serve command.
+    volumes:
+      - ./entrypoint.sh:/entrypoint.sh:ro
+      # Assets prepared by setup-upstream.sh (paths overridable via .env).
+      - ${FLASH_MODEL_HOST:-$HOME/models/Qwen3.8-Flash-Next-W4A16-AutoRound-hybrid-mtpdense-g32}:/model:ro
+      - ${FLASH_TABLE_HOST:-$HOME/models/ple-table-fp8}:/ple-table:ro
+      - ${FLASH_VOCAB_HOST:-$HOME/.cache/qwen38-v16b/draft-vocab-ids-K65536.txt}:/draft-vocab/ids.txt:ro
+
+    environment:
+      # --- PLE memory-mapped table (the W4A16 target's PLE table stays in
+      #     storage and is read via mmap; this is what leaves room for the KV
+      #     pool and makes the config ~71 GiB-resident) ---
+      - VLLM_PLE_MMAP=1
+      - VLLM_PLE_MMAP_DIR=/ple-table
+      - VLLM_PLE_MMAP_WORKERS=${PLE_WORKERS:-32}
+      - VLLM_PLE_MMAP_PREWARM=${PLE_PREWARM:-1}
+      - VLLM_PLE_MMAP_PREFETCH=${PLE_PREFETCH:-0}
+      - VLLM_PLE_MMAP_MADV_RANDOM=${PLE_MADV_RANDOM:-1}
+      - VLLM_PLE_MMAP_FAST_ROWS=${PLE_FAST_ROWS:-16}
+      - VLLM_PLE_MMAP_CHUNK=${PLE_CHUNK:-8}
+      - VLLM_PLE_MMAP_FAST_PATH=${PLE_FAST_PATH:-1}
+      - VLLM_PLE_MMAP_FAST_MAX_ROWS=${PLE_FAST_MAX_ROWS:-262144}
+      # --- drafter / MTP ---
+      - VLLM_MTP_DRAFT_VOCAB=/draft-vocab/ids.txt
+      - VLLM_DRAFTER_EXPERTS_FP8=1
+      # --- v16b runtime pins (upstream: keep these for the v16b identity) ---
+      - VLLM_MARLIN_USE_ATOMIC_ADD=1
+      - VLLM_FP8_HYBRID=1
+      - VLLM_USE_DEEP_GEMM=0
+      - VLLM_USE_FLASHINFER_SAMPLER=1
+      - CUDA_LAUNCH_BLOCKING=0
+      - QWEN38NEXT_LOW_LATENCY_GEMM=1
+      - QWEN38NEXT_LLG_PDL=0
+      - VLLM_VERIFY_TOPK_TRITON=1
+      - VLLM_KEEP_DRAFT_BLOCKS=1
+      - VLLM_HIT_DEBUG=0
+      - VLLM_STEP_PROFILE=0
+      # --- serving parameters (defaults = promoted v16b values; override in
+      #     .env) ---
+      - SERVED_NAME=${SERVED_NAME:-qwen}
+      - CTX=${CTX:-262144}
+      - SEQS=${SEQS:-8}
+      - GPU_MEM=${GPU_MEM:-0.01}
+      - KV_BYTES=${KV_BYTES:-16g}
+      - MTP=${MTP:-3}
+      - PREFIX_CACHE=${PREFIX_CACHE:-1}
+      - TOOL_PARSER=${TOOL_PARSER:-qwen3_xml}
+      - MAX_NUM_BATCHED_TOKENS=${MAX_NUM_BATCHED_TOKENS:-8192}
+      - FLASHINFER_AUTOTUNE=${FLASHINFER_AUTOTUNE:-0}
+
+    ports:
+      - "8000:8000"
+
+    restart: unless-stopped

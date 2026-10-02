@@ -47,9 +47,8 @@ Three self-contained stacks plus a notification sidecar:
   value was raised to 8 for multi-agent use; if multi-agent latency regresses,
   drop it back toward 4 via `.env`.
 - **The DGX Spark runs the LLM only.** `GPU_MEMORY_UTILIZATION` defaults to
-  0.80 in the `qwen38-27b-nvfp4` stack and 0.70 in the larger
-  `qwen38-27b-bf16` stack, and relies on nothing else sharing the unified
-  memory pool. If the Spark gains other workloads, lower it.
+  0.80 in both 27B stacks (`qwen38-27b-nvfp4` and `qwen38-27b-bf16`), and
+  relies on nothing else sharing the unified memory pool. If the Spark gains other workloads, lower it.
 - Quality over speed: agentic tool-calling quality (vLLM tool-eval ~90/100 for this
   model) is prioritized over raw tok/s.
 
@@ -60,8 +59,8 @@ Three self-contained stacks plus a notification sidecar:
   `qwen38-27b-nvfp4` serves `nvidia/Qwen3.8-27B-NVFP4` (NVIDIA Model Optimizer
   NVFP4 + FP8 mixed-precision quantization of the official `Qwen/Qwen3.8-27B`
   base, ~22 GB); `qwen38-27b-bf16` serves the original `Qwen/Qwen3.8-27B` in
-  BF16 (~55 GB; `GPU_MEMORY_UTILIZATION=0.70` there — note the fraction caps
-  weights + KV together, so the larger weights shrink the KV pool). Both checkpoints ship
+  BF16 (~55 GB). Both use `GPU_MEMORY_UTILIZATION=0.80`; the fraction caps
+  weights + KV together, so the larger BF16 weights leave a smaller KV pool. Both checkpoints ship
   a built-in **1-layer MTP head** (`text_config.mtp_num_hidden_layers: 1`,
   `mtp.layers.0.*` tensors in `model.safetensors.index.json`), so speculative
   decoding needs only

@@ -68,7 +68,7 @@ The LLM is configured in the UI, not by environment variables:
    (`VLLM_API_KEY` in `.env`; `local-dgx-key` by default for a local tunnel).
 5. **Model ID**: the model name vLLM is serving
    (e.g. `qwen-local`, the alias all three DGX stacks serve —
-   `qwen38-27b-nvfp4`, `qwen38-27b-b16`, and `flash_ultrafast`; see
+   `qwen38-27b-nvfp4`, `qwen38-27b-bf16`, and `flash_ultrafast`; see
    `dgx_spark_host/README.md`).
 6. **Save** — it takes effect immediately for new conversations.
 

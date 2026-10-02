@@ -1,4 +1,4 @@
-# Qwen3.8-27B BF16 (`qwen38-27b-b16`)
+# Qwen3.8-27B BF16 (`qwen38-27b-bf16`)
 
 Self-contained stack that serves **`Qwen/Qwen3.8-27B`** — the official Qwen
 checkpoint in BF16 (full precision, ~55 GB) — via vLLM on the DGX Spark.
@@ -8,13 +8,13 @@ The DGX Spark host offers three sibling stacks, one folder per model (see
 defaults) and all bind port 8000 — run only ONE at a time:
 
 - `../qwen38-27b-nvfp4/` — the NVIDIA NVFP4 quantization (~22 GB)
-- `../qwen38-27b-b16/` — this stack (official BF16, ~55 GB)
+- `../qwen38-27b-bf16/` — this stack (official BF16, ~55 GB)
 - `../flash_ultrafast/` — the Qwen3.8 Flash DGX UltraFast v16b recipe
 
 ## Run
 
 ```bash
-cd dgx_spark_host/qwen38-27b-b16
+cd dgx_spark_host/qwen38-27b-bf16
 docker compose -f compose.yml up --build     # first run downloads ~55 GB
 ```
 

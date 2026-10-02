@@ -5,7 +5,7 @@ Guidance for AI agents (and humans) working in this repository.
 ## Project overview
 
 `local_llm_agent` runs a Qwen model on an **NVIDIA DGX Spark** (GB10, 128 GB unified memory, aarch64) via vLLM, and drives it from **macOS** through **OpenHands**
-over an SSH tunnel (or a plain terminal via **OpenCode**). The DGX side has one self-contained stack per model under `dgx_spark_host/`, all on port 8000 (run one at a time): **`qwen38-27b-nvfp4`** (the current default) serving `nvidia/Qwen3.8-27B-NVFP4` (NVIDIA's NVFP4 + FP8 quantization of the official `Qwen/Qwen3.8-27B`), **`qwen38-27b-b16`** serving the original `Qwen/Qwen3.8-27B` in BF16, and **`flash_ultrafast`** running the [Qwen3.8 Flash DGX UltraFast v16b recipe](https://github.com/dime-online/qwen3.8-Flash-DGX-UltraFast) (patched image + W4A16/FP8 AutoRound-hybrid checkpoint + dense MTP drafter, alias `qwen-local`). The stacks are fully isolated — own image, compose, entrypoint, and defaults; the two 3.8 stacks share no code or parameters.
+over an SSH tunnel (or a plain terminal via **OpenCode**). The DGX side has one self-contained stack per model under `dgx_spark_host/`, all on port 8000 (run one at a time): **`qwen38-27b-nvfp4`** (the current default) serving `nvidia/Qwen3.8-27B-NVFP4` (NVIDIA's NVFP4 + FP8 quantization of the official `Qwen/Qwen3.8-27B`), **`qwen38-27b-bf16`** serving the original `Qwen/Qwen3.8-27B` in BF16, and **`flash_ultrafast`** running the [Qwen3.8 Flash DGX UltraFast v16b recipe](https://github.com/dime-online/qwen3.8-Flash-DGX-UltraFast) (patched image + W4A16/FP8 AutoRound-hybrid checkpoint + dense MTP drafter, alias `qwen-local`). The stacks are fully isolated — own image, compose, entrypoint, and defaults; the two 3.8 stacks share no code or parameters.
 
 Three self-contained stacks plus a notification sidecar:
 
@@ -15,7 +15,7 @@ Three self-contained stacks plus a notification sidecar:
   one at a time):
   - `qwen38-27b-nvfp4/` — `nvidia/Qwen3.8-27B-NVFP4` (NVFP4+FP8, ~22 GB), the
     current default, served as `qwen-local`.
-  - `qwen38-27b-b16/` — `Qwen/Qwen3.8-27B` (official BF16, ~55 GB), served as
+  - `qwen38-27b-bf16/` — `Qwen/Qwen3.8-27B` (official BF16, ~55 GB), served as
     `qwen-local`.
   - `flash_ultrafast/` — the [Qwen3.8 Flash DGX UltraFast v16b recipe](https://github.com/dime-online/qwen3.8-Flash-DGX-UltraFast)
     (patched image + W4A16/FP8 checkpoint + MTP drafter), served as `qwen-local`.
@@ -48,7 +48,7 @@ Three self-contained stacks plus a notification sidecar:
   drop it back toward 4 via `.env`.
 - **The DGX Spark runs the LLM only.** `GPU_MEMORY_UTILIZATION` defaults to
   0.80 in the `qwen38-27b-nvfp4` stack and 0.70 in the larger
-  `qwen38-27b-b16` stack, and relies on nothing else sharing the unified
+  `qwen38-27b-bf16` stack, and relies on nothing else sharing the unified
   memory pool. If the Spark gains other workloads, lower it.
 - Quality over speed: agentic tool-calling quality (vLLM tool-eval ~90/100 for this
   model) is prioritized over raw tok/s.
@@ -56,10 +56,10 @@ Three self-contained stacks plus a notification sidecar:
 ## Key tuning decisions (why they exist)
 
 - **Model**: one stack per checkpoint, fully isolated
-  (`dgx_spark_host/qwen38-27b-nvfp4/` and `dgx_spark_host/qwen38-27b-b16/`).
+  (`dgx_spark_host/qwen38-27b-nvfp4/` and `dgx_spark_host/qwen38-27b-bf16/`).
   `qwen38-27b-nvfp4` serves `nvidia/Qwen3.8-27B-NVFP4` (NVIDIA Model Optimizer
   NVFP4 + FP8 mixed-precision quantization of the official `Qwen/Qwen3.8-27B`
-  base, ~22 GB); `qwen38-27b-b16` serves the original `Qwen/Qwen3.8-27B` in
+  base, ~22 GB); `qwen38-27b-bf16` serves the original `Qwen/Qwen3.8-27B` in
   BF16 (~55 GB; `GPU_MEMORY_UTILIZATION=0.70` there — note the fraction caps
   weights + KV together, so the larger weights shrink the KV pool). Both checkpoints ship
   a built-in **1-layer MTP head** (`text_config.mtp_num_hidden_layers: 1`,
@@ -134,7 +134,7 @@ cd dgx_spark_host/qwen38-27b-nvfp4     # the current default
 docker compose -f compose.yml up --build   # first run downloads ~22 GB of weights
 
 # or the other 27B stack (original BF16 checkpoint, ~55 GB):
-cd ../qwen38-27b-b16 && docker compose -f compose.yml up --build
+cd ../qwen38-27b-bf16 && docker compose -f compose.yml up --build
 
 # or the throughput stack (one-time setup first, stop the other stacks first —
 # they share port 8000)
@@ -158,7 +158,7 @@ Sanity checks that do not need a GPU:
 
 ```bash
 bash -n dgx_spark_host/qwen38-27b-nvfp4/entrypoint.sh
-bash -n dgx_spark_host/qwen38-27b-b16/entrypoint.sh
+bash -n dgx_spark_host/qwen38-27b-bf16/entrypoint.sh
 bash -n dgx_spark_host/flash_ultrafast/entrypoint.sh dgx_spark_host/flash_ultrafast/setup-upstream.sh
 bash -n agent_canvas_native/install.sh agent_canvas_native/run.sh
 # entrypoint dry-run: put a stub `vllm` script in PATH and run an entrypoint.sh

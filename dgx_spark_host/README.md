@@ -7,7 +7,7 @@ parameters. All bind port 8000; run only ONE at a time on the Spark.
 | Stack | Serves | Run | Served alias |
 |---|---|---|---|
 | [`qwen38-27b-nvfp4/`](qwen38-27b-nvfp4/) | `nvidia/Qwen3.8-27B-NVFP4` (NVFP4+FP8, ~22 GB) — the current default | `cd qwen38-27b-nvfp4 && docker compose up --build` | `qwen-local` |
-| [`qwen38-27b-b16/`](qwen38-27b-b16/) | `Qwen/Qwen3.8-27B` (official BF16, ~55 GB) | `cd qwen38-27b-b16 && docker compose up --build` | `qwen-local` |
+| [`qwen38-27b-bf16/`](qwen38-27b-bf16/) | `Qwen/Qwen3.8-27B` (official BF16, ~55 GB) | `cd qwen38-27b-bf16 && docker compose up --build` | `qwen-local` |
 | [`flash_ultrafast/`](flash_ultrafast/) | Qwen3.8 Flash DGX UltraFast v16b recipe (patched image, W4A16/FP8 + MTP drafter) | `cd flash_ultrafast && ./setup-upstream.sh && docker compose up --build` | `qwen-local` |
 
 Each stack's README documents its env vars, defaults, and tuning notes.

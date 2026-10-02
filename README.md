@@ -11,7 +11,7 @@ The DGX side offers three serving options, all on port 8000 (run one at a
 time):
 
 - **`qwen38-27b-nvfp4`** — the current NVFP4 quantization from NVIDIA (default),
-- **`qwen38-27b-b16`** — the original BF16 Qwen checkpoint, and
+- **`qwen38-27b-bf16`** — the original BF16 Qwen checkpoint, and
 - **`flash_ultrafast`** — the [Qwen3.8 Flash DGX UltraFast v16b recipe](https://github.com/dime-online/qwen3.8-Flash-DGX-UltraFast).
 
 See [`dgx_spark_host/`](#dgx_spark_host) → *The three stacks*.
@@ -27,7 +27,7 @@ share no code or parameters). All bind port 8000; run only ONE at a time.
 | Stack | Serves | How it's run | Served alias |
 |---|---|---|---|
 | `qwen38-27b-nvfp4/` | `nvidia/Qwen3.8-27B-NVFP4` (NVFP4+FP8, ~22 GB) — the current default | `cd dgx_spark_host/qwen38-27b-nvfp4 && docker compose up --build` | `qwen-local` |
-| `qwen38-27b-b16/` | `Qwen/Qwen3.8-27B` (official BF16, ~55 GB) | `cd dgx_spark_host/qwen38-27b-b16 && docker compose up --build` | `qwen-local` |
+| `qwen38-27b-bf16/` | `Qwen/Qwen3.8-27B` (official BF16, ~55 GB) | `cd dgx_spark_host/qwen38-27b-bf16 && docker compose up --build` | `qwen-local` |
 | `flash_ultrafast/` | Qwen3.8 Flash DGX UltraFast v16b recipe | `cd dgx_spark_host/flash_ultrafast && ./setup-upstream.sh && docker compose up --build` | `qwen-local` |
 
 Run the current default:

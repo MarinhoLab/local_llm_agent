@@ -4,7 +4,7 @@ Third DGX-side stack: the [dime-online/qwen3.8-Flash-DGX-UltraFast](https://gith
 **v16b** serving recipe, run through this repo's `compose.yml`.
 
 Unlike the two 27B sibling stacks in `../` (`qwen38-27b-nvfp4` /
-`qwen38-27b-b16`, which are plain Hugging Face checkpoints served by the
+`qwen38-27b-bf16`, which are plain Hugging Face checkpoints served by the
 standard `vllm/vllm-openai:nightly` image), this is a **custom serving recipe**:
 a patched vLLM image (CUDA 13.0, low-latency SM12x GEMM, custom Mamba/PLE/MTP
 kernels) serving a W4A16/FP8 AutoRound-hybrid checkpoint whose PLE table is
@@ -72,7 +72,7 @@ clients need no changes). It accepts text, image (`image_url`) and video
 (`video_url`).
 
 > **Port 8000 is shared** with the two 27B stacks
-> (`../qwen38-27b-nvfp4/`, `../qwen38-27b-b16/`). Run only ONE of the three
+> (`../qwen38-27b-nvfp4/`, `../qwen38-27b-bf16/`). Run only ONE of the three
 > DGX stacks at a time on the Spark — stop the others first (e.g.
 > `docker compose -f ../qwen38-27b-nvfp4/compose.yml down`).
 

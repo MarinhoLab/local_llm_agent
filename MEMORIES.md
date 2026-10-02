@@ -609,3 +609,19 @@ the stack's own folder — move it when redeploying.
 **Verification:** `bash -n` on all entrypoints; stub-`vllm` dry-runs of the
 nvfp4 and b16 entrypoints (correct model/memory flags per stack); `docker
 compose config` renders for all three stacks.
+
+### 2026-10-02 — flash_ultrafast now serves the alias `qwen-local`
+
+Requested: the flash stack should expose the same model alias as the 27B
+stacks so the macOS clients (Agent Canvas LLM profile, OpenCode
+`OPENCODE_MODEL_ID`) never change when switching stacks. Changed the default
+`SERVED_NAME` from `qwen` to `qwen-local` in
+`flash_ultrafast/entrypoint.sh` + `compose.yml` (still overridable via `.env`),
+and removed the client-side special-case notes (`OPENCODE_MODEL_ID=qwen` etc.)
+from the READMEs, `AGENTS.md`, and `agent_canvas_native/README.md`. All three
+stacks now serve `qwen-local` on port 8000; only the underlying checkpoint
+differs. (Earlier MEMORIES entries describing the `qwen` alias are history.)
+
+**Verification:** `bash -n`; `docker compose config` shows
+`SERVED_NAME: qwen-local`; stub dry-run emits `--served-model-name
+qwen-local`.

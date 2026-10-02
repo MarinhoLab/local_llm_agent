@@ -756,3 +756,20 @@ registry can't be queried it warns and skips the check.
 agent-canvas): upgrade in place 1.20.0 → 1.24.0 passes; stale 1.20.0 earlier
 on PATH → exit 1 with the copies listed; registry unreachable → warning,
 continues; npm receives `install -g @openhands/agent-canvas@latest`.
+### 2026-10-02 — flash_ultrafast: `PROMPT_TOKENS_DETAILS` switch, default off
+
+Server-side fix for the Agent Canvas crash `'PromptTokensDetailsWrapper'
+object has no attribute 'cache_creation_tokens'`. Upstream v16b passes
+`--enable-prompt-tokens-details`, which adds `usage.prompt_tokens_details`
+(cached-token counts) to API responses; openhands-sdk < 1.50.0 (every Agent
+Canvas release up to 1.24.0) crashes on that block. The flag is now behind
+`PROMPT_TOKENS_DETAILS` (entrypoint + compose), default `0`; `1` restores the
+upstream value. It is reporting-only: no effect on speed or output. The 27B
+stacks never passed it, which is why they were unaffected. The client-side
+fix is an Agent Canvas release pinning sdk >= 1.50.0 (see `install.sh`).
+
+**Verification:** `bash -n` + `shellcheck -S warning`; stub-`vllm` run: unset
+and `0` emit no `--enable-prompt-tokens-details`, `1` adds exactly that
+argument; `docker compose config` renders `0` by default and `1` from `.env`.
+Earlier repro: openhands-sdk 1.49.x works when the usage carries no
+`prompt_tokens_details`.

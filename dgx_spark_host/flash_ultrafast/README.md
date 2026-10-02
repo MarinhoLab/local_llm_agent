@@ -102,6 +102,7 @@ variable it reads — including ones not in the table, such as `SPEC_EXTRA`,
 | `MTP` | `3` | MTP draft depth (`0` disables speculative decoding) |
 | `TOOL_PARSER` | `qwen3_xml` | Tool-call parser |
 | `PREFIX_CACHE` | `1` | Prefix caching |
+| `PROMPT_TOKENS_DETAILS` | `0` (**upstream: `1`**) | `--enable-prompt-tokens-details`: cached-token counts in API `usage`. Off here because OpenHands SDK < 1.50.0 (Agent Canvas ≤ 1.24.0) crashes on it (`'PromptTokensDetailsWrapper' object has no attribute 'cache_creation_tokens'`). Reporting only — no effect on speed or output; set `1` for clients that handle it |
 | `FLASH_MODEL_HOST` / `FLASH_TABLE_HOST` / `FLASH_VOCAB_HOST` | `~/models/...` | Host asset paths |
 
 Per the upstream docs, changing any pinned value produces a new variant whose

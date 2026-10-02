@@ -713,3 +713,21 @@ for any other non-git directory.
 docker, python3) of: the Spark state (dir with only `.venv`, no `hf`) →
 recovers, clones, downloads; re-run reuses venv + clone; non-git dir with
 other files → clear error; clean first run.
+
+### 2026-10-02 — Drafter build: upstream test writes into a read-only /work
+
+On the Spark, step 4 (`recipe/build/model/build.sh --run`) died in upstream's
+own unit test: `OSError: [Errno 30] Read-only file system:
+'_iter4_st_test.safetensors.partial'`. Upstream bug (still on its main,
+0c391a3): `test_safetensors_roundtrip(tmp="_iter4_st_test.safetensors")`
+writes into the working dir, and `build.sh` runs the tests with
+`-v "$here:/work:ro" -w /work`. The other tests use `tempfile`. Before the
+drafter build, `setup-upstream.sh` now rewrites that one default to
+`/tmp/_iter4_st_test.safetensors` in the local upstream clone (idempotent,
+warns when it patches). The image (step 3) had built and passed its checks.
+
+**Verification:** reproduced locally by running upstream's test from a
+read-only copy of `recipe/build/model` (fails writing the `.partial` file);
+with the patched default, 289/289 checks pass and the scratch file is
+removed. The `sed` edit checked on Linux (alpine): patches once, no-op on
+re-run. `bash -n` + `shellcheck -S warning`.

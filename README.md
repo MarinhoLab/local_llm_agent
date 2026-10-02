@@ -2,7 +2,7 @@
 
 Run a Qwen model on a DGX Spark and connect to it from macOS using
 [Agent Canvas](https://docs.openhands.dev/openhands/usage/agent-canvas/setup)
-(native, no Docker) or [OpenCode](https://opencode.ai) (terminal client, no Docker).
+(native, no Docker).
 Push notifications of agent activity to your phone via
 [ntfy](https://ntfy.sh) are included (`ntfy/` + `agent_canvas_native/README.md`
 → *Notifications*).
@@ -19,8 +19,11 @@ See [`dgx_spark_host/`](#dgx_spark_host) → *The three stacks*.
 ## `dgx_spark_host/`
 
 Host a Qwen model via vLLM on the DGX Spark machine — one self-contained stack
-per model, in its own folder (own image, compose, entrypoint, defaults; they
-share no code or parameters). All bind port 8000; run only ONE at a time.
+per model, in its own folder (own image, compose, entrypoint and defaults; they
+share no code or parameters). The two 27B stacks build their image from a
+`Dockerfile`; `flash_ultrafast/` pins a prebuilt patched image produced by its
+`setup-upstream.sh`, so it has no `Dockerfile`. All bind port 8000; run only ONE
+at a time.
 
 ### The three stacks
 
@@ -40,8 +43,9 @@ docker compose -f compose.yml up --build
 The API is available at `http://localhost:8000/v1`. For shared networks, bind
 to `127.0.0.1` in the stack's `compose.yml`.
 
-Each stack's `README.md` documents its own environment variables (defaults
-live in its `Dockerfile`; override via `.env` or `compose.yml`) and tuning
+Each stack's `README.md` documents its own environment variables (defaults live
+in its `Dockerfile` for the two 27B stacks, and in `compose.yml`/`entrypoint.sh`
+for `flash_ultrafast`; override via `.env` or `compose.yml`) and tuning
 notes (DGX Spark, GB10, 128 GB unified memory, LLM-only box). Both 27B
 checkpoints ship a 1-layer MTP head, so MTP speculative decoding is on by
 default for them; both are native vision-language models with image inputs
@@ -100,67 +104,6 @@ the local filesystem (there is no container sandbox).
 
 Needs Node.js ≥ 22.12 and `uv`. Ports, overrides, and troubleshooting are
 documented in [`agent_canvas_native/README.md`](agent_canvas_native/README.md).
-
-## `opencode_client/`
-
-Drive the model from a plain terminal with
-[OpenCode](https://opencode.ai) — no Docker required. It targets the served
-alias `qwen-local`, which all three DGX stacks serve, so the client
-configuration never changes when switching stacks.
-Works on macOS (behind
-the SSH tunnel) or directly on the DGX Spark (no tunnel, use `OPENCODE_BASE_URL=http://127.0.0.1:8000/v1`).
-
-### Setup (once)
-
-```bash
-cd opencode_client
-cp example.env .env        # then edit .env if the defaults do not fit
-./scripts/install-opencode.sh
-```
-
-`install-opencode.sh` installs the OpenCode binary (official installer into
-`~/.opencode/bin`, or `npm install -g opencode-ai` with `OPENCODE_INSTALL=npm`)
-and generates, from `.env`:
-
-- the provider config at `~/.config/opencode/opencode.json`
-  (`OPENCODE_CONFIG_DIR` to relocate it), and
-- the API key at OpenCode's auth store (`auth.json` in the XDG data dir;
-  `chmod 600`). The key is never written into the tracked config.
-
-### Use
-
-```bash
-./scripts/check-vllm.sh                 # endpoint + model + chat smoke test
-./scripts/launch-opencode.sh ~/git/my_project
-```
-
-`launch-opencode.sh` re-verifies the endpoint (and prints the exact
-`ssh -N -L ...` command if the tunnel is down), then runs
-`opencode -m dgx-vllm/qwen-local` in the given project directory (all DGX
-stacks serve `qwen-local`, so no per-stack change is needed).
-`opencode_client/AGENTS.md` is a template of agent instructions: copy it into
-a target project's root for OpenCode to pick up project-specific rules.
-
-### Environment Variables
-
-| Variable                 | Default                     | Description                                                                     |
-|--------------------------|-----------------------------|---------------------------------------------------------------------------------|
-| `OPENCODE_PROVIDER_ID`   | `dgx-vllm`                  | Provider ID; the key in `opencode.json` and `auth.json` — all three must match   |
-| `OPENCODE_PROVIDER_NAME` | `DGX Spark vLLM`            | Display name in the OpenCode model picker (quote it in `.env` — it is sourced)   |
-| `OPENCODE_MODEL_ID`      | `qwen-local`                | Model ID exactly as vLLM serves it (from `GET /v1/models`) — all DGX stacks serve this alias |
-| `OPENCODE_MODEL_NAME`    | `Qwen3.8-27B`             | Model display name in the picker (config-neutral)                          |
-| `OPENCODE_BASE_URL`      | `http://127.0.0.1:8000/v1`  | vLLM API as reachable from THIS machine (tunnel port is derived from it)         |
-| `OPENCODE_API_KEY`       | `local-dgx-key`             | Must match the vLLM server's `API_KEY`; written to the git-ignored `auth.json`   |
-| `OPENCODE_CONTEXT_LENGTH`| `262144`                    | Model context window in tokens                                                    |
-| `OPENCODE_OUTPUT_LENGTH` | `16384`                     | Max output tokens                                                                 |
-| `OPENCODE_REQUEST_TIMEOUT` | `120`                     | Per-request curl timeout in seconds for the checks                                |
-| `OPENCODE_VERSION`       | *(unset)*                   | Pin an OpenCode release for the installer; unset = latest                         |
-| `OPENCODE_INSTALL`       | `official`                  | `official` (default) or `npm`                                                     |
-| `OPENCODE_CONFIG_DIR`    | `~/.config/opencode`        | Where the generated `opencode.json` goes (global OpenCode config dir)             |
-
-Generated files (`.env`, `opencode.json`, `auth.json` next to the config) are
-git-ignored; only `example.env`, `opencode.example.json`, and
-`auth.example.json` are tracked as templates.
 
 ## `ntfy/`
 

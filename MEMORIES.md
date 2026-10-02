@@ -14,6 +14,12 @@
 > entry about sharing the host Docker socket with `agent_canvas/compose.yml`
 > now describes a retired stack and is kept only as history.
 
+> **Note (2026-10): the `opencode_client/` stack has been removed.** Agent
+> Canvas (`agent_canvas_native/`) is the only supported macOS-side client.
+> Earlier entries that mention OpenCode, `OPENCODE_MODEL_ID`, or files under
+> `opencode_client/` are kept as history and no longer describe anything in
+> the repo.
+
 A persistent, append-friendly record of **what we tried, what worked, and why**
 for this repo. New findings are appended to
 [Investigation log](#investigation-log) rather than rewriting history.

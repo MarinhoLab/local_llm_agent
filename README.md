@@ -7,10 +7,16 @@ Push notifications of agent activity to your phone via
 [ntfy](https://ntfy.sh) are included (`ntfy/` + `agent_canvas_native/README.md`
 → *Notifications*).
 
-The DGX side offers two selectable checkpoint configurations (`MODEL_CONFIG`):
-the current **NVFP4** quantization from NVIDIA (`nvfp4`, default) and the
-original **BF16** Qwen checkpoint (`b16`) — see
-[`dgx_spark_host/`](#dgx_spark_host) → *Model configurations*.
+The DGX side offers three serving options, all on port 8000 (run one at a
+time):
+
+- **`nvfp4`** — the current NVFP4 quantization from NVIDIA (`MODEL_CONFIG=nvfp4`,
+  default in `dgx_spark_host/`),
+- **`b16`** — the original BF16 Qwen checkpoint (`MODEL_CONFIG=b16`), and
+- **`flash_ultrafast`** — the [Qwen3.8 Flash DGX UltraFast v16b recipe](https://github.com/dime-online/qwen3.8-Flash-DGX-UltraFast)
+  as a separate substack (`dgx_spark_host/flash_ultrafast/`).
+
+See [`dgx_spark_host/`](#dgx_spark_host) → *Model configurations*.
 
 ## `dgx_spark_host/`
 
@@ -27,26 +33,37 @@ The API is available at `http://localhost:8000/v1`. For shared networks, bind to
 
 ### Model configurations
 
-The DGX side has two selectable checkpoint configurations, chosen with
-`MODEL_CONFIG`:
+Three serving options for the DGX Spark, all on port 8000 — run only ONE at a
+time:
 
-- **`nvfp4`** (default) — `nvidia/Qwen3.8-27B-NVFP4`, NVIDIA Model Optimizer
-  NVFP4+FP8 mixed-precision quantization of the official base (~22 GB, fast
-  decode, low memory).
-- **`b16`** — `Qwen/Qwen3.8-27B`, the original Qwen checkpoint in BF16
-  (~55 GB, full precision).
+| Option | Serves | How it's run | Served alias |
+|---|---|---|---|
+| `nvfp4` (default) | `nvidia/Qwen3.8-27B-NVFP4` (NVFP4+FP8, ~22 GB) | `MODEL_CONFIG=nvfp4` in `dgx_spark_host/.env` | `qwen-local` |
+| `b16` | `Qwen/Qwen3.8-27B` (official BF16, ~55 GB) | `MODEL_CONFIG=b16` in `dgx_spark_host/.env` | `qwen-local` |
+| `flash_ultrafast` | Qwen3.8-Flash-Next W4A16/FP8 AutoRound-hybrid + dense MTP drafter | separate substack | `qwen` |
 
+The first two are checkpoint presets of this stack's standard vLLM
+`nightly` image, selected with `MODEL_CONFIG` in `dgx_spark_host/.env`.
 Both ship a 1-layer MTP head, so MTP speculative decoding is on by default for
-either. Per-preset defaults (`MODEL_NAME`, `GPU_MEMORY_UTILIZATION`,
-`SPEC_METHOD`, `NUM_SPEC_TOKENS`) are applied by `entrypoint.sh` from
-`MODEL_CONFIG` and remain overridable in `.env`. To switch, set it in
-`dgx_spark_host/.env` (or the environment) and restart:
+either; per-preset defaults (`MODEL_NAME`, `GPU_MEMORY_UTILIZATION`,
+`SPEC_METHOD`, `NUM_SPEC_TOKENS`) are applied by `entrypoint.sh` and remain
+overridable in `.env`. To switch between them:
 
 ```bash
 cd dgx_spark_host
 echo 'MODEL_CONFIG=b16' >> .env     # or edit an existing .env
 docker compose -f compose.yml up --build
 ```
+
+The third option, `flash_ultrafast`, is **not** a plain checkpoint — it is the
+[dime-online/qwen3.8-Flash-DGX-UltraFast](https://github.com/dime-online/qwen3.8-Flash-DGX-UltraFast)
+**v16b** recipe (a patched vLLM image serving a W4A16/FP8 AutoRound-hybrid
+checkpoint with a dense MTP drafter), run from the dedicated
+`dgx_spark_host/flash_ultrafast/` substack. It is the throughput option
+(~74 tok/s single stream, ~212 aggregate at 8 streams per the upstream's GB10
+measurements; ~71 GiB resident, 16 GB KV) and serves the alias `qwen` instead
+of `qwen-local`. See
+[`dgx_spark_host/flash_ultrafast/README.md`](dgx_spark_host/flash_ultrafast/README.md).
 
 ### Environment Variables
 
@@ -95,6 +112,34 @@ Tuning notes (DGX Spark, GB10, 128 GB unified memory, LLM-only box):
   revision of this stack has been removed; there is no `ENABLE_LONG_CONTEXT`
   knob anymore.
 
+### `flash_ultrafast/` — the Qwen3.8 Flash DGX UltraFast option
+
+A self-contained third DGX-side configuration, in its own substack:
+[`dgx_spark_host/flash_ultrafast/`](dgx_spark_host/flash_ultrafast/).
+
+- **What it is**: the [dime-online/qwen3.8-Flash-DGX-UltraFast](https://github.com/dime-online/qwen3.8-Flash-DGX-UltraFast)
+  **v16b** recipe — a patched vLLM image (CUDA 13.0, custom low-latency
+  GEMM/Mamba/PLE/MTP kernels) serving the W4A16/FP8 AutoRound-hybrid
+  `Qwen3.8-Flash-Next` checkpoint. The PLE table is memory-mapped from
+  storage, so the model stays ~71 GiB resident with a 16 GB KV pool at the
+  full 262,144-token context. A dense T80 MTP drafter (depth 3, block
+  rejection) provides the speed — upstream reports **74 tok/s single stream**
+  and **212 tok/s aggregate at 8 streams** on one GB10 (re-verify on your
+  hardware).
+- **Why a separate substack**: it uses a different (patched) image, extra
+  downloads (~135 GB), and a drafter build, so it cannot be a `MODEL_CONFIG`
+  value of the standard `nvfp4`/`b16` stack. It is served on the same port
+  8000 but with the alias **`qwen`** (the other two use `qwen-local`).
+- **One-time setup** (on the Spark): `./dgx_spark_host/flash_ultrafast/setup-upstream.sh`
+  — clones the upstream Apache-2.0 repo, downloads the pinned checkpoint +
+  PLE table, builds the patched image and the T80 drafter, and installs the
+  draft vocabulary.
+- **Run**: `cd dgx_spark_host/flash_ultrafast && docker compose -f compose.yml up --build`.
+  Stop the `nvfp4`/`b16` stack first — the three options share port 8000.
+
+Full details, provenance, the upstream's claims, and the overridable
+parameters are in [`dgx_spark_host/flash_ultrafast/README.md`](dgx_spark_host/flash_ultrafast/README.md).
+
 ## `agent_canvas_native/`
 
 Run [Agent Canvas](https://docs.openhands.dev/openhands/usage/agent-canvas/setup)
@@ -110,7 +155,7 @@ the local filesystem (there is no container sandbox).
 ```
 
 - Address `http://localhost:8020` (avoids 8000, the vLLM tunnel).
-- LLM profile: Settings → LLM, provider **OpenAI-compatible**, base `http://localhost:8000/v1`, key `local-dgx-key`, model `qwen-local` (the alias the stack serves; the underlying checkpoint is `nvidia/Qwen3.8-27B-NVFP4` for `MODEL_CONFIG=nvfp4` or `Qwen/Qwen3.8-27B` for `MODEL_CONFIG=b16`).
+- LLM profile: Settings → LLM, provider **OpenAI-compatible**, base `http://localhost:8000/v1`, key `local-dgx-key`, model `qwen-local` (the alias the `nvfp4`/`b16` stack serves; the underlying checkpoint is `nvidia/Qwen3.8-27B-NVFP4` for `MODEL_CONFIG=nvfp4` or `Qwen/Qwen3.8-27B` for `MODEL_CONFIG=b16`). The `flash_ultrafast` configuration serves the alias `qwen` on the same port instead.
 - Optional **ntfy push notifications** for the phone: with `NTFY_ENABLED=true` in `agent_canvas_native/.env`, `run.sh` also starts the notifier daemon (and the per-PC ntfy server from `ntfy/`) that pings you when your agent finishes, needs input, or errors. See `agent_canvas_native/README.md` → *Notifications (ntfy)*.
 
 | Variable             | Default                | Description                                                                 |

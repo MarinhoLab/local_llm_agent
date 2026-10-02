@@ -65,32 +65,36 @@ ssh -L 8000:localhost:8000 USER@DGX_SPARK_IP
 Read the `Dockerfile`/`compose.yml` before changing any of these — most are
 deliberate:
 
-- **`gpus: all` + `ipc: host`** in `dgx_spark_host/compose.yml` require the
+- **`gpus: all` + `ipc: host`** in each `dgx_spark_host/<stack>/compose.yml` require the
   **NVIDIA Container Toolkit** on the Spark. If the container starts but the
   log shows no GPU / vLLM OOMs, the toolkit is missing or not on the PATH.
 - **`HF_CACHE:-./hf-cache:/root/.cache/huggingface`** persists downloaded weights
   across runs. Do not delete it or the next start re-downloads ~22 GB.
-- All runtime defaults live as `ENV` in `dgx_spark_host/Dockerfile`;
-  `entrypoint.sh` composes the `vllm serve` command from those variables. Keep
-  the README's env-var table in sync when changing defaults.
+- In the two 27B stacks, all runtime defaults live as `ENV` in the stack's
+  `Dockerfile`; its `entrypoint.sh` composes the `vllm serve` command from
+  those variables, and the stack's optional `.env` reaches the container via
+  `env_file`. Keep that stack's README env-var table in sync when changing
+  defaults. `flash_ultrafast/` instead runs a prebuilt patched image with its
+  pinned values in `compose.yml`/`entrypoint.sh`.
 
 ## Everyday container operations
 
 ```bash
-# vLLM server (DGX Spark)
-docker compose -f dgx_spark_host/compose.yml logs -f --tail=200 qwen-vllm
-docker compose -f dgx_spark_host/compose.yml ps
-docker compose -f dgx_spark_host/compose.yml down            # stop, keep volumes
-docker compose -f dgx_spark_host/compose.yml down -v         # also remove volumes
+# vLLM server (DGX Spark) — default stack; for the others use
+# qwen38-27b-b16/ (dgx-qwen-b16-vllm) or flash_ultrafast/ (dgx-qwen38-flash)
+docker compose -f dgx_spark_host/qwen38-27b-nvfp4/compose.yml logs -f --tail=200
+docker compose -f dgx_spark_host/qwen38-27b-nvfp4/compose.yml ps
+docker compose -f dgx_spark_host/qwen38-27b-nvfp4/compose.yml down      # stop, keep volumes
+docker compose -f dgx_spark_host/qwen38-27b-nvfp4/compose.yml down -v   # also remove volumes
 
 # One-off shell / exec into a running container
-docker exec -it dgx-qwen-vllm bash
+docker exec -it dgx-qwen-nvfp4-vllm bash
 ```
 
 ## `.env` and secrets (do not leak)
 
-- `.env` files are local-only and git-ignored. `dgx_spark_host` reads
-  `HF_CACHE`/`HF_TOKEN` from `.env` when present (compose defaults work without
+- `.env` files are local-only and git-ignored. Each `dgx_spark_host/<stack>/`
+  reads `HF_CACHE`/`HF_TOKEN` from its own `.env` when present (compose defaults work without
   it). Copy the tracked template to a local `.env` and fill the real values
   there.
 - The vLLM API key (`local-dgx-key`) is a local placeholder — vLLM does not
@@ -107,4 +111,4 @@ docker exec -it dgx-qwen-vllm bash
   installed/enabled on the Spark host;
   `docker run --rm --gpus all nvidia/cuda:12.4.0-base nvidia-smi`.
 - **Stale build after `Dockerfile`/env change** — rebuild with
-  `docker compose -f dgx_spark_host/compose.yml up --build` (or add `--no-cache`).
+  `docker compose -f dgx_spark_host/<stack>/compose.yml up --build` (or add `--no-cache`).

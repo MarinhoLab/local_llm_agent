@@ -33,8 +33,9 @@ this folder shares no code or parameters with them.
 - Cold prefill up to **~4,016 tok/s** (16k), 2–3.4× faster than the base recipe.
 - 93% on a 492-item eval suite; teacher-forced agreement with the original
   checkpoint within the noise band.
-- Model residency **~71 GiB**, KV pool **16 GB** at the pinned 262,144-token
-  context.
+- KV pool **16 GB** at the pinned 262,144-token context. (Upstream's
+  **~71 GiB** residency figure is the *base recipe's*; for v16b it reports a
+  16.5 GiB available-memory low-water in its capacity run.)
 
 These are the upstream's measurements. The CJK caveat applies: the 65,536-id
 draft vocabulary is English/code-weighted, so non-English output gets lower
@@ -42,7 +43,8 @@ draft *acceptance* (slower decode) but unchanged output quality.
 
 ## One-time setup (on the Spark)
 
-Requires ~135 GB of free disk, the NVIDIA Container Toolkit, and a
+Requires ~135 GB of free disk (~130 GB of weights + PLE table, plus
+the ~4.8 GiB drafter directory and the Docker image layers), the NVIDIA Container Toolkit, and a
 CUDA-13-compatible driver. Downloads are large; the build is long.
 
 ```bash
@@ -50,8 +52,11 @@ cd dgx_spark_host/flash_ultrafast
 ./setup-upstream.sh        # clone upstream, download weights, build image + drafter, install vocab
 ```
 
-`setup-upstream.sh` is idempotent per step and can be re-run; use `SKIP_CLONE=1
-SKIP_DOWNLOAD=1 SKIP_IMAGE=1 SKIP_MODEL=1` to bypass what is already done.
+`setup-upstream.sh` can be re-run: downloads resume, and the drafter build is
+skipped once its output directory exists. Use `SKIP_CLONE=1 SKIP_DOWNLOAD=1
+SKIP_IMAGE=1 SKIP_MODEL=1` to bypass what is already done. If you set
+`MODELS_ROOT` for the setup, set the matching `FLASH_MODEL_HOST` /
+`FLASH_TABLE_HOST` in `.env` so `compose.yml` mounts the same directories.
 
 ## Run
 
@@ -81,7 +86,10 @@ no changes (see `../README.md` for the Agent Canvas LLM-profile example and
 ## Overriding the pinned values
 
 The promoted v16b values are the defaults here; they are overridable via
-`.env` in this directory (sourced by `compose.yml` and `entrypoint.sh`):
+`.env` in this directory. `compose.yml` uses it for interpolation and also
+passes it into the container (`env_file`), so `entrypoint.sh` sees every
+variable it reads — including ones not in the table, such as `SPEC_EXTRA`,
+`PIN_PROMPT`, `PIN_MAX_FRACTION`, `LOAD_FORMAT`, and `REASONING_PARSER`:
 
 | Variable | v16b default | Meaning |
 |---|---|---|

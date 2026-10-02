@@ -6,12 +6,12 @@
 # the upstream (Apache-2.0) build scripts rather than vendoring them here:
 #   1. clone https://github.com/dime-online/qwen3.8-Flash-DGX-UltraFast
 #   2. install tooling (hf CLI, jq, md5sum/sha256sum)
-#   3. download the pinned public checkpoint (~27 GB) + FP8 PLE table
+#   3. download the pinned public checkpoint (~75 GB) + FP8 PLE table (~52 GB)
 #   4. build the patched vLLM image (iter6c -> iter6d)
 #   5. build the T80 dense-MTP drafter directory (~4.8 GB of new shards)
 #   6. install the 65,536-id draft vocabulary
 #
-# Total downloads are ~135 GB; expect tens of minutes to a few hours on the
+# Total downloads are ~130 GB (plus the parent vLLM image); expect tens of minutes to a few hours on the
 # Spark. Everything is cached under $MODELS_ROOT and the upstream clone.
 #
 # Run it from this directory. Use SKIP_* to bypass steps you already did:
@@ -26,8 +26,13 @@ CLONE_DIR="${CLONE_DIR:-$HOME/qwen3.8-Flash-DGX-UltraFast}"
 MODELS_ROOT="${MODELS_ROOT:-$HOME/models}"
 VOCAB_CACHE="$HOME/.cache/qwen38-v16b"
 
+# Hugging Face repo ids and their local download directories (upstream docs/BUILD.md).
+BASE_HF_REPO="Saren/Qwen3.8-Flash-Next-W4A16-AutoRound-hybrid"
+TABLE_HF_REPO="Saren/Qwen3.8-Flash-Next-ple-table-fp8"
 BASE_REPO="${MODELS_ROOT%/}/Qwen3.8-Flash-Next-W4A16-AutoRound-hybrid"
 TABLE_REPO="${MODELS_ROOT%/}/ple-table-fp8"
+# The T80 drafter directory built from BASE_REPO; this is what compose.yml mounts.
+MTPDENSE_DIR="${MODELS_ROOT%/}/Qwen3.8-Flash-Next-W4A16-AutoRound-hybrid-mtpdense-g32"
 BASE_REV="${BASE_REV:-8b82f0b7abe3d1150a7827d298c75e86267636ae}"
 TABLE_REV="${TABLE_REV:-50511b0a41aa1d34b8beb7e5d4bb06a0b650dc14}"
 IMAGE_TAG="${IMAGE_TAG:-qwen38-flash-dgx:iter6d-20260910}"
@@ -74,13 +79,13 @@ else
 fi
 [ -f "$CLONE_DIR/recipe/config/v16b/serve.sh" ] || { echo "upstream layout not found at $CLONE_DIR" >&2; exit 2; }
 
-# --- 2. downloads (~135 GB) --------------------------------------------------
+# --- 2. downloads (~130 GB) --------------------------------------------------
 log "Downloading pinned checkpoint + PLE table"
 if [ "${SKIP_DOWNLOAD:-0}" = "1" ]; then
   warn "SKIP_DOWNLOAD=1 — assuming checkpoint + PLE table exist under $MODELS_ROOT"
 else
-  for pair in "$BASE_REPO:$BASE_REPO:$BASE_REV" "$TABLE_REPO:$TABLE_REPO:$TABLE_REV"; do
-    local_dir="${pair%%:*}"; rest="${pair#*:}"; repo="${rest%%:*}"; rev="${rest#*:}"
+  for triple in "$BASE_REPO|$BASE_HF_REPO|$BASE_REV" "$TABLE_REPO|$TABLE_HF_REPO|$TABLE_REV"; do
+    IFS='|' read -r local_dir repo rev <<< "$triple"
     mkdir -p "$local_dir"
     echo "  downloading $repo @ $rev -> $local_dir"
     "$HF_BIN" download "$repo" --revision "$rev" --local-dir "$local_dir"
@@ -99,6 +104,9 @@ fi
 log "Building T80 dense-MTP drafter directory"
 if [ "${SKIP_MODEL:-0}" = "1" ]; then
   warn "SKIP_MODEL=1 — assuming the mtpdense-g32 directory exists"
+elif [ -f "$MTPDENSE_DIR/dense-mtp-build-report.json" ]; then
+  # The upstream builder refuses to overwrite an existing output directory.
+  echo "  already built at $MTPDENSE_DIR"
 else
   env MODELS_ROOT="$MODELS_ROOT" IMAGE="$IMAGE_TAG" \
     bash "$CLONE_DIR/recipe/build/model/build.sh" --run
@@ -121,7 +129,7 @@ fi
 # --- 6. verify ---------------------------------------------------------------
 log "Verifying prepared assets"
 docker image inspect "$IMAGE_TAG" >/dev/null 2>&1 || { echo "image $IMAGE_TAG missing" >&2; exit 1; }
-for d in "$BASE_REPO" "$TABLE_REPO"; do
+for d in "$BASE_REPO" "$TABLE_REPO" "$MTPDENSE_DIR"; do
   [ -d "$d" ] || { echo "missing directory: $d" >&2; exit 1; }
 done
 [ -r "$vocab" ] || { echo "missing draft vocab: $vocab" >&2; exit 1; }
@@ -130,7 +138,7 @@ log "Setup complete"
 cat <<EOF
 The v16b assets are in place:
   image : $IMAGE_TAG
-  model : $BASE_REPO
+  model : $MTPDENSE_DIR (built from $BASE_REPO)
   table : $TABLE_REPO
   vocab : $vocab
 

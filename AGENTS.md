@@ -60,7 +60,8 @@ Three self-contained stacks plus a notification sidecar:
   `qwen38-27b-nvfp4` serves `nvidia/Qwen3.8-27B-NVFP4` (NVIDIA Model Optimizer
   NVFP4 + FP8 mixed-precision quantization of the official `Qwen/Qwen3.8-27B`
   base, ~22 GB); `qwen38-27b-b16` serves the original `Qwen/Qwen3.8-27B` in
-  BF16 (~55 GB, so `GPU_MEMORY_UTILIZATION=0.70` there). Both checkpoints ship
+  BF16 (~55 GB; `GPU_MEMORY_UTILIZATION=0.70` there — note the fraction caps
+  weights + KV together, so the larger weights shrink the KV pool). Both checkpoints ship
   a built-in **1-layer MTP head** (`text_config.mtp_num_hidden_layers: 1`,
   `mtp.layers.0.*` tensors in `model.safetensors.index.json`), so speculative
   decoding needs only
@@ -74,13 +75,13 @@ Three self-contained stacks plus a notification sidecar:
   **v16b** recipe, kept as its own self-contained stack
   (`dgx_spark_host/flash_ultrafast/`). It is isolated from the two 27B stacks
   because it requires a different (patched) vLLM image, two extra downloads
-  (~135 GB: W4A16/FP8 AutoRound-hybrid checkpoint + FP8 PLE table), a built
+  (~130 GB: W4A16/FP8 AutoRound-hybrid checkpoint + FP8 PLE table), a built
   T80 dense-MTP drafter, and ~30 pinned env/serve settings. Its speed comes
   from the MTP drafter (block rejection), not lower-bit target weights —
   output quality is preserved. It serves the same alias `qwen-local` as the
   other stacks on the same port 8000; run only one stack at a time. Upstream claims: 74
-  tok/s single stream / 212 aggregate at 8 streams; ~71 GiB resident, 16 GB
-  KV. The Apache-2.0 upstream is the source of truth for the image build and
+  tok/s single stream / 212 aggregate at 8 streams; 16 GB KV pool (upstream's
+  ~71 GiB residency figure is for the base recipe). The Apache-2.0 upstream is the source of truth for the image build and
   the pinned values — `setup-upstream.sh` delegates to it; do not re-vendor or
   re-tune here.
 - **vLLM image**: `vllm/vllm-openai:nightly`. Qwen3.8 uses the `qwen3_5`
@@ -138,7 +139,7 @@ cd ../qwen38-27b-b16 && docker compose -f compose.yml up --build
 # or the throughput stack (one-time setup first, stop the other stacks first —
 # they share port 8000)
 cd ../flash_ultrafast
-./setup-upstream.sh                      # one-time: ~135 GB downloads + image/drafter build
+./setup-upstream.sh                      # one-time: ~130 GB downloads + image/drafter build
 docker compose -f compose.yml up --build
 
 # Agent Canvas side (macOS, SSH tunnel first: ssh -N -L 8000:localhost:8000 USER@DGX_SPARK_IP)
@@ -166,8 +167,10 @@ bash -n agent_canvas_native/install.sh agent_canvas_native/run.sh
 ## Repo layout & conventions
 
 - `.env` files are local-only and hold secrets (`HF_TOKEN`) — they are
-  git-ignored. Each `dgx_spark_host/<stack>/` reads `HF_CACHE`/`HF_TOKEN` from
-  its own `.env` when present (compose defaults work without it).
+  git-ignored. Each `dgx_spark_host/<stack>/` reads its own optional `.env`:
+  compose uses it for `${...}` interpolation (`HF_CACHE`) and passes it into
+  the container via `env_file`, so `HF_TOKEN` and overrides of the `Dockerfile`
+  `ENV` defaults reach `entrypoint.sh` (compose defaults work without it).
   `agent_canvas_native/example.env` is the native Canvas stack's tracked
   template — `install.sh` copies it to `.env`.
 - `context/` holds exported OpenHands conversation events and is git-ignored —

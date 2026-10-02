@@ -53,13 +53,13 @@ enabled via `--limit-mm-per-prompt '{"image":4}'`.
   **v16b** recipe — a patched vLLM image (CUDA 13.0, custom low-latency
   GEMM/Mamba/PLE/MTP kernels) serving the W4A16/FP8 AutoRound-hybrid
   `Qwen3.8-Flash-Next` checkpoint. The PLE table is memory-mapped from
-  storage, so the model stays ~71 GiB resident with a 16 GB KV pool at the
-  full 262,144-token context. A dense T80 MTP drafter (depth 3, block
+  storage, which leaves room for a 16 GB KV pool at the full 262,144-token
+  context. A dense T80 MTP drafter (depth 3, block
   rejection) provides the speed — upstream reports **74 tok/s single stream**
   and **212 tok/s aggregate at 8 streams** on one GB10 (re-verify on your
   hardware).
 - **Why fully isolated**: it uses a different (patched) image, extra
-  downloads (~135 GB), and a drafter build — so it has its own folder with its
+  downloads (~130 GB), and a drafter build — so it has its own folder with its
   own compose/entrypoint/pinned env, rather than sharing parameters with the
   two 27B stacks. It is served on the same port 8000 with the same alias,
   **`qwen-local`** as the other two — clients need no changes.

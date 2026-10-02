@@ -60,9 +60,11 @@ VLLM_API_KEY="${VLLM_API_KEY:-local-dgx-key}"
 # compose resolves relative volume paths against the compose file — so
 # `AGENT_CANVAS_STATE=./openhands-state` in .env always means
 # "<this folder>/openhands-state" no matter where you run run.sh from.
-# Absolute paths (/...) and ~-paths are left untouched.
+# A ~-prefix is expanded to $HOME; absolute paths are left untouched.
 case "${AGENT_CANVAS_STATE}" in
-  /*|~*) : ;;
+  "~") AGENT_CANVAS_STATE="${HOME}" ;;
+  "~/"*) AGENT_CANVAS_STATE="${HOME}/${AGENT_CANVAS_STATE#\~/}" ;;
+  /*) : ;;
   *) AGENT_CANVAS_STATE="${SCRIPT_DIR}/${AGENT_CANVAS_STATE#./}" ;;
 esac
 
@@ -124,6 +126,14 @@ if [[ "${NTFY_ENABLED:-}" == "true" || "${NTFY_ENABLED:-}" == "1" ]]; then
   STATE_LOG_DIR="${AGENT_CANVAS_STATE}/logs"
   mkdir -p "${STATE_LOG_DIR}"
 
+  # Without account auth the topic name is the only credential (ntfy/README.md),
+  # so the example.env default is not safe to publish to.
+  if [[ -z "${NTFY_AUTH_TOKEN:-}" && "${NTFY_TOPIC:-}" == "agent-canvas" ]]; then
+    echo "WARNING: NTFY_TOPIC is the default 'agent-canvas' — on an unauthenticated" >&2
+    echo "         ntfy server anyone who guesses it can read these notifications." >&2
+    echo "         Set a random NTFY_TOPIC in ${SCRIPT_DIR}/.env (install.sh generates one)." >&2
+  fi
+
   # 4a. local ntfy server — only when pointing at the loopback default and
   #     Docker is present. A remote NTFY_SERVER (e.g. https://ntfy.sh) skips
   #     this entirely.
@@ -175,7 +185,7 @@ export OH_CANVAS_SAFE_STATE_DIR="${AGENT_CANVAS_STATE}"
 echo
 echo "Agent Canvas (native) : http://localhost:${AGENT_CANVAS_PORT}"
 echo "state dir             : ${AGENT_CANVAS_STATE}"
-echo "LLM profile (UI)      : Settings > LLM — provider openai, base URL ${VLLM_BASE_URL}"
+echo "LLM profile (UI)      : Settings > LLM — provider OpenAI-compatible, base URL ${VLLM_BASE_URL}"
 echo
 # exec replaces the shell so Ctrl+C / the process lifecycle is clean.
 # --public is deliberately NOT passed: local mode auto-generates the API key

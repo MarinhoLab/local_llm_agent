@@ -14,8 +14,9 @@ This is the npm-based install path documented at
 ```
 agent_canvas_native/
 ├── install.sh     # one-time setup: check prereqs, install the npm package,
-│                  #   make the state dir, seed .env
+│                  #   make the state dir, seed .env (with a random NTFY_TOPIC)
 ├── run.sh         # start the stack (UI + agent-server + automation + ingress)
+├── ntfy_notifier.py  # optional push-notification daemon (started by run.sh)
 ├── example.env    # configuration template (copied to .env by install.sh)
 └── openhands-state/   # agent-server state — git-ignored (created at first run)
 ```
@@ -111,8 +112,9 @@ Everything runs as your user, with the same filesystem access your account has
 (there is no container boundary). Agent Canvas splits its data into three
 places:
 
-**1. The state dir** — per-conversation *runtime* data. Default `./openhands-state`
-next to this folder; override with `AGENT_CANVAS_STATE=/some/abs/path`. The
+**1. The state dir** — per-conversation *runtime* data. Default
+`./openhands-state`, resolved to inside this folder wherever you run `run.sh`
+from; override with `AGENT_CANVAS_STATE=/some/abs/path`. The
 launcher creates the subdirectories on first run:
 
 ```

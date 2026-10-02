@@ -1,7 +1,8 @@
 # DGX Spark host stacks
 
-One self-contained stack per model — each folder has its own `Dockerfile`,
-`entrypoint.sh`, `compose.yml`, and `README.md`, and they share no code or
+One self-contained stack per model — each folder has its own `entrypoint.sh`,
+`compose.yml`, and `README.md` (the two 27B stacks also have a `Dockerfile`;
+`flash_ultrafast/` pins a prebuilt patched image), and they share no code or
 parameters. All bind port 8000; run only ONE at a time on the Spark.
 
 | Stack | Serves | Run | Served alias |
@@ -11,6 +12,6 @@ parameters. All bind port 8000; run only ONE at a time on the Spark.
 | [`flash_ultrafast/`](flash_ultrafast/) | Qwen3.8 Flash DGX UltraFast v16b recipe (patched image, W4A16/FP8 + MTP drafter) | `cd flash_ultrafast && ./setup-upstream.sh && docker compose up --build` | `qwen-local` |
 
 Each stack's README documents its env vars, defaults, and tuning notes.
-The macOS-side clients (Agent Canvas / OpenCode) reach the running stack over
+The macOS-side client (Agent Canvas) reaches the running stack over
 the SSH tunnel on port 8000 and use the served alias — `qwen-local`, which
 all three stacks serve, so the client configuration never changes.

@@ -16,26 +16,31 @@ triggers:
   - where are conversations
 ---
 
-OpenHands conversation data lives in the Agent Canvas **state**, at
-`~/.openhands` (for the native stack, per-conversation runtime data also sits
-in `agent_canvas_native/openhands-state/`). The live runtime data sits under
-the `agent-canvas/` subdirectory. There are **two on-disk formats** to be
-aware of.
+OpenHands conversation data lives in the Agent Canvas **state**. Where that
+is depends on the runtime: the OpenHands **sandbox** keeps it under
+`/home/openhands/.openhands/agent-canvas/`, while this repo's **native stack**
+keeps runtime data in `agent_canvas_native/openhands-state/` (only the API and
+encryption keys live in `~/.openhands/agent-canvas/`). There are **two on-disk
+formats** to be aware of.
 
 ## Where things are
 
 | Location | Format | What it is |
 |---|---|---|
-| `/home/openhands/.openhands/agent-canvas/conversations/<conversation_id>/` | One directory per conversation | The canonical store. |
-| `/home/openhands/.openhands/agent-canvas/bash_events/` | Flat directory, one JSON file per bash command/output | A global, timestamp-prefixed dump of all terminal traffic across conversations. |
+| `/home/openhands/.openhands/agent-canvas/conversations/<conversation_id>/` (sandbox) or `<state>/dev_conversations/<id-no-dashes>/` (native stack) | One directory per conversation | The canonical store. |
+| `/home/openhands/.openhands/agent-canvas/bash_events/` (sandbox) or `<state>/bash_events/` (native stack) | Flat directory, one JSON file per bash command/output | A global, timestamp-prefixed dump of all terminal traffic across conversations. |
 
-> **Path caveat (important).** This skill documents the *current* Agent Canvas
-> layout, where state lives under the per-user home
-> (`/home/openhands/.openhands/agent-canvas/...`). Older OpenHands versions
+`<state>` is `$OH_PERSISTENCE_DIR/openhands-state` when set, else
+`agent_canvas_native/openhands-state` (the `run.sh` default,
+`AGENT_CANVAS_STATE`).
+
+> **Path caveat (important).** The sandbox paths are under the sandbox user's
+> home (`/home/openhands/.openhands/agent-canvas/...`); on the native stack the
+> equivalent is `<state>/...` as in the table. Older OpenHands versions
 > stored the same data under a `/workspace` volume
 > (`/workspace/conversations/<id>/` and `/workspace/bash_events/`). If you are
 > looking at a repo whose docs reference `/workspace/...`, that is the retired
-> location — map it to `~/.openhands/agent-canvas/...`. There is no legacy
+> location — map it to the store above. There is no legacy
 > per-repo `project/<repo>/context/` dump in the current layout either.
 
 ### 1. Per-conversation dir: `.../conversations/<id>/`
@@ -61,8 +66,11 @@ directory contains:
   Some files can be empty (write in progress) — skip zero-byte files. There is
   also an `events/.eventlog.lock` — ignore it.
 
-> There is **no** `TASKS.json` in the current layout (task-tracker state is not
-> persisted as a top-level file here).
+> `TASKS.json` (task-tracker state) is written per conversation only in
+> deployments whose agent-server persists it — the native stack's
+> `openhands-state/dev_conversations/<id-no-dashes>/` store does (see the
+> `handover` skill); the sandbox store above does not. Treat it as optional
+> wherever you read conversations.
 
 Each event file is a single JSON object with `id`, `timestamp`, `source`,
 `parent_id`, and `kind`.

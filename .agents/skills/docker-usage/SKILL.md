@@ -17,8 +17,8 @@ triggers:
 ---
 
 This repository has **one Docker stack** — the DGX Spark vLLM server. The
-Agent Canvas client and the OpenCode client run **natively** (no Docker); see
-`agent_canvas_native/` and `opencode_client/` respectively.
+Agent Canvas client runs **natively** (no Docker); see
+`agent_canvas_native/`.
 
 | Stack | Directory | Machine | What it runs | Command |
 |---|---|---|---|---|
@@ -54,8 +54,8 @@ ssh -L 8000:localhost:8000 USER@DGX_SPARK_IP
 
 - Each `dgx_spark_host/<stack>/compose.yml` publishes `8000:8000`; the tunnel
   maps that onto the Mac's `localhost:8000`.
-- The native Agent Canvas stack (`agent_canvas_native`) and the OpenCode client
-  both target `http://localhost:8000/v1` on the Mac, which resolves through the
+- The native Agent Canvas stack (`agent_canvas_native`) targets
+  `http://localhost:8000/v1` on the Mac, which resolves through the
   tunnel to the Spark.
 - If the server is restarted or the tunnel drops, model calls fail with
   connection-refused. Fix the tunnel, then retry.

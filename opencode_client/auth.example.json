@@ -1,6 +1,0 @@
-{
-  "dgx-vllm": {
-    "type": "api",
-    "key": "local-dgx-key"
-  }
-}

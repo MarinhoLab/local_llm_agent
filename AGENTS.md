@@ -5,14 +5,16 @@ Guidance for AI agents (and humans) working in this repository.
 ## Project overview
 
 `local_llm_agent` runs a Qwen model on an **NVIDIA DGX Spark** (GB10, 128 GB unified memory, aarch64) via vLLM, and drives it from **macOS** through **OpenHands**
-over an SSH tunnel (or a plain terminal via **OpenCode**). The DGX side has one self-contained stack per model under `dgx_spark_host/`, all on port 8000 (run one at a time): **`qwen38-27b-nvfp4`** (the current default) serving `nvidia/Qwen3.8-27B-NVFP4` (NVIDIA's NVFP4 + FP8 quantization of the official `Qwen/Qwen3.8-27B`), **`qwen38-27b-bf16`** serving the original `Qwen/Qwen3.8-27B` in BF16, and **`flash_ultrafast`** running the [Qwen3.8 Flash DGX UltraFast v16b recipe](https://github.com/dime-online/qwen3.8-Flash-DGX-UltraFast) (patched image + W4A16/FP8 AutoRound-hybrid checkpoint + dense MTP drafter, alias `qwen-local`). The stacks are fully isolated — own image, compose, entrypoint, and defaults; the two 3.8 stacks share no code or parameters.
+over an SSH tunnel. The DGX side has one self-contained stack per model under `dgx_spark_host/`, all on port 8000 (run one at a time): **`qwen38-27b-nvfp4`** (the current default) serving `nvidia/Qwen3.8-27B-NVFP4` (NVIDIA's NVFP4 + FP8 quantization of the official `Qwen/Qwen3.8-27B`), **`qwen38-27b-bf16`** serving the original `Qwen/Qwen3.8-27B` in BF16, and **`flash_ultrafast`** running the [Qwen3.8 Flash DGX UltraFast v16b recipe](https://github.com/dime-online/qwen3.8-Flash-DGX-UltraFast) (patched image + W4A16/FP8 AutoRound-hybrid checkpoint + dense MTP drafter, alias `qwen-local`). The stacks are fully isolated — own image, compose, entrypoint, and defaults; the three stacks share no code or parameters.
 
 Three self-contained stacks plus a notification sidecar:
 
 - `dgx_spark_host/` — the DGX Spark side, **one self-contained stack per
-  model**, each with its own `Dockerfile`, `entrypoint.sh`, `compose.yml`, and
-  `README.md` (they share no code or parameters; all bind port 8000, so run
-  one at a time):
+  model**, each with its own `entrypoint.sh`, `compose.yml`, and `README.md`
+  (they share no code or parameters; all bind port 8000, so run one at a
+  time). The two 27B stacks additionally have their own `Dockerfile` holding
+  all `ENV` defaults; `flash_ultrafast/` instead pins a prebuilt patched image
+  built by its `setup-upstream.sh`:
   - `qwen38-27b-nvfp4/` — `nvidia/Qwen3.8-27B-NVFP4` (NVFP4+FP8, ~22 GB), the
     current default, served as `qwen-local`.
   - `qwen38-27b-bf16/` — `Qwen/Qwen3.8-27B` (official BF16, ~55 GB), served as
@@ -24,12 +26,6 @@ Three self-contained stacks plus a notification sidecar:
   Node.js ≥ 22.12 and `uv`, with **no Docker**; also reaches vLLM through the
   tunnel; UI at `http://localhost:8020`. Agents run as your user on the local
   filesystem. See `agent_canvas_native/README.md` for ports and overrides.
-- `opencode_client/` — [OpenCode](https://opencode.ai) terminal client (no Docker) that
-  connects to the same `qwen-local` model. `scripts/install-opencode.sh` installs the
-  binary and generates the provider `opencode.json` + `auth.json` from `opencode_client/.env`;
-  `scripts/check-vllm.sh` verifies the endpoint; `scripts/launch-opencode.sh` verifies
-  then launches `opencode -m dgx-vllm/qwen-local`. Shared vLLM checks live in
-  `scripts/lib_vllm.sh`. Config precedence: environment > `.env` > built-in defaults.
 - `ntfy/` — per-PC [ntfy](https://ntfy.sh) push server (single Docker container,
   port `2020`). With `NTFY_ENABLED=true` in `agent_canvas_native/.env`, `run.sh`
   also starts `agent_canvas_native/ntfy_notifier.py`, a stdlib-only daemon that
@@ -146,32 +142,32 @@ docker compose -f compose.yml up --build
 # Agent Canvas side (macOS, SSH tunnel first: ssh -N -L 8000:localhost:8000 USER@DGX_SPARK_IP)
 ./agent_canvas_native/install.sh   # one-time (upgrades on re-run)
 ./agent_canvas_native/run.sh       # UI: http://localhost:8020
-
-# OpenCode terminal client (macOS, SSH tunnel first — same tunnel as Canvas)
-cd opencode_client
-cp example.env .env           # then edit .env if the defaults do not fit
-./scripts/install-opencode.sh # install binary + generate provider config/auth
-./scripts/check-vllm.sh       # endpoint + model + chat smoke test
-./scripts/launch-opencode.sh ~/git/my_project
 ```
 
 Sanity checks that do not need a GPU:
 
 ```bash
+# one file per `bash -n` invocation: with several paths it checks only the first
 bash -n dgx_spark_host/qwen38-27b-nvfp4/entrypoint.sh
 bash -n dgx_spark_host/qwen38-27b-bf16/entrypoint.sh
-bash -n dgx_spark_host/flash_ultrafast/entrypoint.sh dgx_spark_host/flash_ultrafast/setup-upstream.sh
-bash -n agent_canvas_native/install.sh agent_canvas_native/run.sh
+bash -n dgx_spark_host/flash_ultrafast/entrypoint.sh
+bash -n dgx_spark_host/flash_ultrafast/setup-upstream.sh
+bash -n agent_canvas_native/install.sh
+bash -n agent_canvas_native/run.sh
+python3 -m py_compile agent_canvas_native/ntfy_notifier.py
 # entrypoint dry-run: put a stub `vllm` script in PATH and run an entrypoint.sh
+# compose rendering: (cd dgx_spark_host/<stack> && docker compose config)
 ```
 
 ## Repo layout & conventions
 
 - `.env` files are local-only and hold secrets (`HF_TOKEN`) — they are
   git-ignored. Each `dgx_spark_host/<stack>/` reads its own optional `.env`:
-  compose uses it for `${...}` interpolation (`HF_CACHE`) and passes it into
-  the container via `env_file`, so `HF_TOKEN` and overrides of the `Dockerfile`
-  `ENV` defaults reach `entrypoint.sh` (compose defaults work without it).
+  compose uses it for `${...}` interpolation (`HF_CACHE` in the two 27B stacks)
+  and passes it into the container via `env_file`, so `HF_TOKEN` and overrides
+  of the `Dockerfile` `ENV` defaults reach `entrypoint.sh` (compose defaults
+  work without it). `flash_ultrafast/` has no `HF_CACHE`/`HF_TOKEN` mount — its
+  `.env` only overrides the serve settings read by its `entrypoint.sh`.
   `agent_canvas_native/example.env` is the native Canvas stack's tracked
   template — `install.sh` copies it to `.env`.
 - `context/` holds exported OpenHands conversation events and is git-ignored —
@@ -181,10 +177,13 @@ bash -n agent_canvas_native/install.sh agent_canvas_native/run.sh
   LLM profile, session API key, and encryption key live in `~/.openhands`
   (also git-ignored / outside the repo).
 - **One stack per model, fully isolated.** Each `dgx_spark_host/<stack>/`
-  folder holds its own `Dockerfile` (all `ENV` defaults for that checkpoint),
-  `entrypoint.sh` (composes the `vllm serve` command from those variables),
-  `compose.yml`, and `README.md`. The stacks share no code or parameters — the
-  two 3.8 stacks are independent copies, not a shared file with presets.
+  folder holds its own `entrypoint.sh` (composes the `vllm serve` command from
+  environment variables), `compose.yml`, and `README.md`; the two 27B stacks
+  additionally have their own `Dockerfile` with all `ENV` defaults for that
+  checkpoint, while `flash_ultrafast/` pins a prebuilt patched image and keeps
+  its defaults in `compose.yml`/`entrypoint.sh`. The stacks share no code or
+  parameters — the three stacks are independent copies, not a shared file with
+  presets.
   Keep each stack's README env-var table in sync when its defaults change, and
   keep the top-level README/AGENTS.md stack tables accurate.
 - Config changes should stay overridable via environment variables — no

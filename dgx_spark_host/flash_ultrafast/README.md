@@ -78,10 +78,9 @@ clients need no changes). It accepts text, image (`image_url`) and video
 
 ## Clients
 
-The Agent Canvas / OpenCode clients key off the served model alias, and this
+The Agent Canvas client keys off the served model alias, and this
 stack uses the same **`qwen-local`** alias as the 27B stacks, so clients need
-no changes (see `../README.md` for the Agent Canvas LLM-profile example and
-`../../opencode_client/example.env` for OpenCode).
+no changes (see `../README.md` for the Agent Canvas LLM-profile example).
 
 ## Overriding the pinned values
 

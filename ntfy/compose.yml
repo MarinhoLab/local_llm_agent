@@ -10,12 +10,15 @@
 # for the full list.
 #
 # Security model (single user, Tailscale):
-#   - The container is reachable on the Tailscale interface only (WireGuard
-#     encrypts the traffic; the host firewall should keep the port off any
-#     non-Tailscale interface).
+#   - The port is published on all host interfaces by default (plain HTTP). On
+#     a tailnet-only machine WireGuard encrypts the traffic between devices,
+#     but the port also answers on the LAN unless NTFY_BIND_IP pins it (see
+#     the ports block) or the host firewall blocks it.
 #   - The unguessable topic name is the credential, the same model ntfy.sh
 #     uses for its public topics. Anyone who knows the topic can read/write
-#     it — so pick NTFY_TOPIC long and random.
+#     it — so pick NTFY_TOPIC long and random. The server needs no topic
+#     configuration; install.sh generates a random topic in
+#     agent_canvas_native/.env, and the phone subscribes to that same one.
 #   - Optional: set NTFY_AUTH_FILE below to enable account auth (users,
 #     ACLs, access tokens) for stronger protection. See ntfy/README.md
 #     "Optional: account auth".
@@ -34,8 +37,13 @@ services:
     init: true
     ports:
       # Host port -> container port. ntfy listens on 80 inside the container;
-      # we pick the host port.
-      - "${NTFY_PORT:-2020}:80"
+      # we pick the host port. The phone reaches the server over Tailscale, so
+      # the host port must stay reachable from the tailnet interface: by
+      # default it is published on ALL interfaces (NTFY_BIND_IP=0.0.0.0) and
+      # protected by the unguessable topic name — see ntfy/README.md, "Security
+      # notes". Set NTFY_BIND_IP to a specific address (e.g. the Tailscale IP
+      # from `tailscale ip -4`) to keep the port off every other interface.
+      - "${NTFY_BIND_IP:-0.0.0.0}:${NTFY_PORT:-2020}:80"
     environment:
       # Public URL phones use to subscribe. Set to this PC's Tailscale URL,
       # e.g. http://mac.tail:2020. If unset, ntfy infers from the request Host

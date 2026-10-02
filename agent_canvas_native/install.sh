@@ -15,7 +15,9 @@
 #   3. if the npm global prefix is not writable, fall back to a per-user
 #      prefix (~/.npm-global) so the install succeeds without sudo;
 #   4. create the persistent state dir;
-#   5. create .env from example.env if it does not already exist.
+#   5. create .env from example.env if it does not already exist, generating a
+#      random NTFY_TOPIC (the topic is the credential on an unauthenticated
+#      ntfy server — see ntfy/README.md).
 #
 # Usage:
 #   ./agent_canvas_native/install.sh
@@ -36,8 +38,7 @@ need npm  "npm ships with Node.js — reinstall Node.js."
 need uv   "Install uv: curl -LsSf https://astral.sh/uv/install.sh | sh   (or: brew install uv)"
 need curl "Needed for the post-install reachability check (or install curl)."
 
-NODE_MAJOR="$(node -p 'process.versions.node.split(".")[0]')"
-if (( NODE_MAJOR < 22 )); then
+if ! node -e 'const [maj, min] = process.versions.node.split(".").map(Number); process.exit(maj > 22 || (maj === 22 && min >= 12) ? 0 : 1)'; then
   echo "ERROR: Node.js $(node --version) is too old; Agent Canvas needs >= 22.12." >&2
   echo "Install a current Node.js (e.g. via https://nodejs.org or nvm) and re-run." >&2
   exit 1
@@ -99,6 +100,14 @@ fi
 # state (conversations, workspaces, terminal history, logs). The API key,
 # encryption key and LLM profile live in ~/.openhands, independent of it.
 NATIVE_STATE_DIR="${AGENT_CANVAS_STATE:-${SCRIPT_DIR}/openhands-state}"
+# Expand ~ and make a relative path folder-relative, exactly like run.sh does,
+# so install creates the same directory run.sh later uses.
+case "${NATIVE_STATE_DIR}" in
+  "~") NATIVE_STATE_DIR="${HOME}" ;;
+  "~/"*) NATIVE_STATE_DIR="${HOME}/${NATIVE_STATE_DIR#\~/}" ;;
+  /*) : ;;
+  *) NATIVE_STATE_DIR="${SCRIPT_DIR}/${NATIVE_STATE_DIR#./}" ;;
+esac
 mkdir -p "${NATIVE_STATE_DIR}"
 echo "state dir   : ${NATIVE_STATE_DIR}"
 
@@ -108,6 +117,20 @@ if [[ -f "${SCRIPT_DIR}/.env" ]]; then
 else
   cp "${SCRIPT_DIR}/example.env" "${SCRIPT_DIR}/.env"
   echo "created .env from example.env — edit it to taste"
+  # On an unauthenticated ntfy server the topic name is the credential (see
+  # ntfy/README.md), so replace the example's fixed default with a random one.
+  RANDOM_TOPIC="$(node -e '
+      const fs = require("fs");
+      const topic = "agent-canvas-" + require("crypto").randomBytes(8).toString("hex");
+      const p = process.argv[1];
+      fs.writeFileSync(p, fs.readFileSync(p, "utf8").replace(/^NTFY_TOPIC=.*$/m, "NTFY_TOPIC=" + topic));
+      console.log(topic);
+    ' "${SCRIPT_DIR}/.env" 2>/dev/null)"
+  if [[ -n "${RANDOM_TOPIC}" ]]; then
+    echo "random NTFY_TOPIC set (${RANDOM_TOPIC}) — use the same topic on the phone and in ntfy/.env once you enable notifications"
+  else
+    echo "WARNING: could not randomize NTFY_TOPIC — set an unguessable one in .env before enabling ntfy." >&2
+  fi
 fi
 
 echo

@@ -25,6 +25,9 @@ UPSTREAM_REPO="${UPSTREAM_REPO:-dime-online/qwen3.8-Flash-DGX-UltraFast}"
 CLONE_DIR="${CLONE_DIR:-$HOME/qwen3.8-Flash-DGX-UltraFast}"
 MODELS_ROOT="${MODELS_ROOT:-$HOME/models}"
 VOCAB_CACHE="$HOME/.cache/qwen38-v16b"
+# venv for the `hf` CLI when it is not installed. Kept OUT of $CLONE_DIR so the
+# clone target stays empty for `git clone`.
+VENV_DIR="${VENV_DIR:-$VOCAB_CACHE/hf-venv}"
 
 # Hugging Face repo ids and their local download directories (upstream docs/BUILD.md).
 BASE_HF_REPO="Saren/Qwen3.8-Flash-Next-W4A16-AutoRound-hybrid"
@@ -54,16 +57,16 @@ if ! docker run --rm alpine true >/dev/null 2>&1; then
 fi
 
 # The downloads use the huggingface_hub CLI. Prefer an existing `hf`;
-# otherwise install it into a venv next to the upstream clone.
+# otherwise install it into a venv under $VENV_DIR (reused on re-runs).
 if command -v hf >/dev/null 2>&1; then
   HF_BIN="hf"
 elif command -v python3 >/dev/null 2>&1; then
-  mkdir -p "$CLONE_DIR"
-  python3 -m venv "$CLONE_DIR/.venv"
-  # shellcheck disable=SC1091
-  . "$CLONE_DIR/.venv/bin/activate"
-  pip install --quiet --upgrade huggingface_hub
-  HF_BIN="hf"
+  if [ ! -x "$VENV_DIR/bin/hf" ]; then
+    mkdir -p "$(dirname "$VENV_DIR")"
+    python3 -m venv "$VENV_DIR" || { echo "python3 -m venv failed (on Ubuntu: sudo apt install python3-venv)" >&2; exit 2; }
+    "$VENV_DIR/bin/pip" install --quiet --upgrade huggingface_hub
+  fi
+  HF_BIN="$VENV_DIR/bin/hf"
 else
   echo "python3 is required for the downloads" >&2; exit 2
 fi
@@ -74,6 +77,15 @@ log "Cloning upstream recipe"
 if [ "${SKIP_CLONE:-0}" = "1" ]; then
   warn "SKIP_CLONE=1 — assuming $CLONE_DIR exists"
 else
+  if [ -d "$CLONE_DIR" ] && [ ! -d "$CLONE_DIR/.git" ]; then
+    if [ "$(ls -A "$CLONE_DIR")" = ".venv" ]; then
+      # Left by an earlier version of this script, which put its venv here.
+      warn "removing the stale $CLONE_DIR/.venv left by an earlier setup run"
+      rm -rf "${CLONE_DIR:?}/.venv" && rmdir "$CLONE_DIR"
+    else
+      echo "$CLONE_DIR exists but is not a git clone; move it away or set CLONE_DIR" >&2; exit 2
+    fi
+  fi
   [ -d "$CLONE_DIR/.git" ] || git clone "https://github.com/$UPSTREAM_REPO" "$CLONE_DIR"
   git -C "$CLONE_DIR" fetch origin main && git -C "$CLONE_DIR" checkout main
 fi

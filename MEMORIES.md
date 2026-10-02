@@ -697,3 +697,19 @@ raised again via `.env`.
 
 **Verification:** stub-`vllm` dry-run of the BF16 entrypoint emits
 `--max-num-seqs 4`. Not run on a GPU.
+
+### 2026-10-02 — `setup-upstream.sh`: hf venv moved out of the clone dir
+
+First run on the Spark failed at step 1: `fatal: destination path
+'~/qwen3.8-Flash-DGX-UltraFast' already exists and is not an empty directory`.
+Cause: when `hf` was not installed, the tooling step created its venv at
+`$CLONE_DIR/.venv` *before* cloning, so `git clone` found a non-empty target.
+The venv now lives at `$VENV_DIR` (default `~/.cache/qwen38-v16b/hf-venv`,
+reused on re-runs, `hf` called by path). Step 1 removes a clone dir that holds
+only the stale `.venv` from the old script, and stops with a clear message
+for any other non-git directory.
+
+**Verification:** `bash -n` + `shellcheck -S warning`; stub run (fake git,
+docker, python3) of: the Spark state (dir with only `.venv`, no `hf`) →
+recovers, clones, downloads; re-run reuses venv + clone; non-git dir with
+other files → clear error; clean first run.

@@ -625,3 +625,37 @@ differs. (Earlier MEMORIES entries describing the `qwen` alias are history.)
 **Verification:** `bash -n`; `docker compose config` shows
 `SERVED_NAME: qwen-local`; stub dry-run emits `--served-model-name
 qwen-local`.
+
+### 2026-10-02 — Fact-check fixes for the per-stack restructure
+
+Checked against the upstream UltraFast repo (`recipe/config/v16b`,
+`docs/BUILD.md`, README), the Hugging Face API, and the model cards:
+
+- `setup-upstream.sh` passed the *local directory* to `hf download` as the repo
+  id; it now downloads `Saren/Qwen3.8-Flash-Next-W4A16-AutoRound-hybrid` and
+  `Saren/Qwen3.8-Flash-Next-ple-table-fp8` at the pinned revisions. The
+  checkpoint is ~75 GB (not ~27 GB) and the PLE table ~52 GB (~130 GB total,
+  as upstream says). Re-runs skip the drafter build once its output exists
+  (upstream refuses to overwrite), and the verify step checks the
+  `-mtpdense-g32` directory that `compose.yml` mounts.
+- `.env` overrides never reached the containers: compose only used `.env` for
+  `${...}` interpolation, so `GPU_MEMORY_UTILIZATION`, `MAX_NUM_SEQS`,
+  `HF_TOKEN`, `SPEC_EXTRA`, `PIN_PROMPT`, ... were silently ignored (this
+  predates the restructure). Each stack's compose now has an optional
+  `env_file: .env`.
+- `flash_ultrafast/entrypoint.sh`: `PREFIX_CACHE=0` now passes
+  `--no-enable-prefix-caching` (vLLM enables it by default), as upstream does.
+- The BF16 README said 0.70 is lower *because* the weights are larger; the
+  fraction caps weights + KV together, so larger weights shrink KV at a given
+  fraction. 0.70 still leaves ~25 GiB of fp8 KV (~32 KiB/token, ~3 full
+  262144-token sequences); the rationale was corrected, the value kept.
+- Upstream's ~71 GiB residency is the base recipe's, not v16b's; reworded.
+- Stale references to the removed shared `dgx_spark_host/compose.yml`,
+  `dgx-qwen-vllm`, and `MODEL_CONFIG` in the docker-usage skill and
+  `opencode_client/example.env` were updated.
+
+**Verification:** `bash -n` + `shellcheck -S warning` on all scripts;
+`docker compose config` for all three stacks with and without a `.env` (the
+`.env` values now appear in the container environment, 0 of them before);
+stub `vllm` run of the flash entrypoint with `PREFIX_CACHE=1/0`; stub `hf`
+run of the setup download step. Not run on a GPU.

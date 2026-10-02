@@ -47,6 +47,13 @@ backend (the npm package bundles the UI + ingress only).
 ./agent_canvas_native/run.sh
 ```
 
+`install.sh` always installs `@openhands/agent-canvas@latest` and then checks
+that the `agent-canvas` first on `PATH` is that version — it exits with an
+error listing every copy if an older one (e.g. under a different npm prefix)
+shadows it. Re-run it to upgrade: each Agent Canvas release pins its own
+agent-server / `openhands-sdk` version, so upgrading Agent Canvas is also how
+the SDK gets upgraded.
+
 When it's up, the launcher prints a summary. Open:
 
 - **Agent Canvas**: <http://localhost:8020> — the chat UI.

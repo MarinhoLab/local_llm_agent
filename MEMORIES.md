@@ -731,3 +731,28 @@ read-only copy of `recipe/build/model` (fails writing the `.partial` file);
 with the patched default, 289/289 checks pass and the scratch file is
 removed. The `sed` edit checked on Linux (alpine): patches once, no-op on
 re-run. `bash -n` + `shellcheck -S warning`.
+
+### 2026-10-02 — `install.sh` installs and verifies the latest Agent Canvas
+
+Context: Agent Canvas showed `'PromptTokensDetailsWrapper' object has no
+attribute 'cache_creation_tokens'` against the flash stack. Reproduced with a
+fake vLLM returning the flash stack's `prompt_tokens_details`: openhands-sdk
+≤ 1.49.6 crashes in `telemetry` (litellm deletes the `None` attribute but it
+stays in `model_fields_set`); fixed in openhands-sdk 1.50.0. Each Agent
+Canvas release pins agent-server / sdk / tools / workspace to one version
+(`uvx --from openhands-agent-server==V --with openhands-sdk==V ...`):
+1.20.0 → 1.49.1, 1.21.0 → 1.49.3, 1.22.0 → 1.49.4, 1.23.0 → 1.49.5,
+1.24.0 → 1.49.6. So the SDK only moves with Agent Canvas, and `uv cache
+clean` does not help. As of today no Agent Canvas release pins sdk ≥ 1.50.0;
+until one does, `OH_AGENT_SERVER_VERSION=1.50.1` in `agent_canvas_native/.env`
+is the workaround (run.sh exports it).
+
+Change: `install.sh` now runs `npm install -g @openhands/agent-canvas@latest`
+and checks that the `agent-canvas` first on PATH reports the registry's latest
+version; if an older copy shadows it, it exits 1 listing every copy. If the
+registry can't be queried it warns and skips the check.
+
+**Verification:** `bash -n` + `shellcheck -S warning`; stub run (fake npm and
+agent-canvas): upgrade in place 1.20.0 → 1.24.0 passes; stale 1.20.0 earlier
+on PATH → exit 1 with the copies listed; registry unreachable → warning,
+continues; npm receives `install -g @openhands/agent-canvas@latest`.

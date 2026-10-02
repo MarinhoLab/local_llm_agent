@@ -110,9 +110,10 @@ Canvas port 8020 reachable on that PC.
 
 ## Security notes
 
-- Reachability: allow the port only on the Tailscale interface (or rely on
-  WireGuard encryption alone if you accept the trade-off). The server
-  otherwise answers plain HTTP.
+- Reachability: the port is published on all host interfaces by default. Pin
+  it to the Tailscale address (`NTFY_BIND_IP=100.x.y.z` in .env) or firewall
+  it to the tailnet (or rely on WireGuard encryption alone if you accept the
+  trade-off). The server otherwise answers plain HTTP on the LAN too.
 - The message cache (`/var/cache/ntfy`) is retained on the named Docker
   volume; it contains past notification text. Treat the volume like any other
   local state — it is git-ignored and local.

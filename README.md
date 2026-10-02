@@ -170,8 +170,11 @@ documented in [`agent_canvas_native/README.md`](agent_canvas_native/README.md).
 
 ## `opencode_client/`
 
-Drive the same `qwen-local` model from a plain terminal with
-[OpenCode](https://opencode.ai) — no Docker required. Works on macOS (behind
+Drive the model from a plain terminal with
+[OpenCode](https://opencode.ai) — no Docker required. It targets the served
+alias `qwen-local` (the `nvfp4`/`b16` stack); set `OPENCODE_MODEL_ID=qwen` in
+`opencode_client/.env` when the `flash_ultrafast` configuration is running.
+Works on macOS (behind
 the SSH tunnel) or directly on the DGX Spark (no tunnel, use `OPENCODE_BASE_URL=http://127.0.0.1:8000/v1`).
 
 ### Setup (once)
@@ -200,7 +203,8 @@ and generates, from `.env`:
 
 `launch-opencode.sh` re-verifies the endpoint (and prints the exact
 `ssh -N -L ...` command if the tunnel is down), then runs
-`opencode -m dgx-vllm/qwen-local` in the given project directory.
+`opencode -m dgx-vllm/qwen-local` in the given project directory (with
+`flash_ultrafast` active, use `OPENCODE_MODEL_ID=qwen` in `opencode_client/.env`).
 `opencode_client/AGENTS.md` is a template of agent instructions: copy it into
 a target project's root for OpenCode to pick up project-specific rules.
 
@@ -210,7 +214,7 @@ a target project's root for OpenCode to pick up project-specific rules.
 |--------------------------|-----------------------------|---------------------------------------------------------------------------------|
 | `OPENCODE_PROVIDER_ID`   | `dgx-vllm`                  | Provider ID; the key in `opencode.json` and `auth.json` — all three must match   |
 | `OPENCODE_PROVIDER_NAME` | `DGX Spark vLLM`            | Display name in the OpenCode model picker (quote it in `.env` — it is sourced)   |
-| `OPENCODE_MODEL_ID`      | `qwen-local`                | Model ID exactly as vLLM serves it (from `GET /v1/models`)                       |
+| `OPENCODE_MODEL_ID`      | `qwen-local`                | Model ID exactly as vLLM serves it (from `GET /v1/models`); `qwen` for `flash_ultrafast` |
 | `OPENCODE_MODEL_NAME`    | `Qwen3.8-27B`             | Model display name in the picker (same for both `MODEL_CONFIG` options)          |
 | `OPENCODE_BASE_URL`      | `http://127.0.0.1:8000/v1`  | vLLM API as reachable from THIS machine (tunnel port is derived from it)         |
 | `OPENCODE_API_KEY`       | `local-dgx-key`             | Must match the vLLM server's `API_KEY`; written to the git-ignored `auth.json`   |

@@ -10,7 +10,8 @@
 # Steps:
 #   1. verify prerequisites: Node.js >= 22.12, npm, uv (the agent-server and
 #      automation backend run via `uvx`, so `uv` must be on PATH);
-#   2. npm install -g @openhands/agent-canvas (safe to re-run: it upgrades);
+#   2. npm install -g @openhands/agent-canvas@latest (safe to re-run: it
+#      upgrades), then verify the agent-canvas on PATH is that latest version;
 #   3. if the npm global prefix is not writable, fall back to a per-user
 #      prefix (~/.npm-global) so the install succeeds without sudo;
 #   4. create the persistent state dir;
@@ -50,12 +51,20 @@ echo "uv   $(uv --version) OK"
 # some sandboxes) the system prefix (e.g. /usr/local/lib/node_modules) is not
 # writable by the current user. Detect that and fall back to a per-user prefix
 # under ~/.npm-global so the install never needs sudo.
-if ! npm install -g @openhands/agent-canvas >/dev/null 2>&1; then
+#
+# Always ask for @latest explicitly: each agent-canvas release pins its own
+# agent-server / openhands-sdk version (run via uvx), so staying on an old
+# release also means staying on an old SDK.
+LATEST_CANVAS="$(npm view @openhands/agent-canvas version 2>/dev/null || true)"
+if [[ -z "${LATEST_CANVAS}" ]]; then
+  echo "WARNING: could not query the npm registry for the latest agent-canvas version." >&2
+fi
+if ! npm install -g @openhands/agent-canvas@latest >/dev/null 2>&1; then
   echo "global npm install failed (prefix likely not writable) — retrying with a per-user prefix."
   npm config set prefix "${HOME}/.npm-global"
   export PATH="${HOME}/.npm-global/bin:${PATH}"
-  npm install -g @openhands/agent-canvas || {
-    echo "ERROR: npm install -g @openhands/agent-canvas failed even with the per-user prefix." >&2
+  npm install -g @openhands/agent-canvas@latest || {
+    echo "ERROR: npm install -g @openhands/agent-canvas@latest failed even with the per-user prefix." >&2
     exit 1
   }
 fi
@@ -70,7 +79,18 @@ if ! command -v agent-canvas >/dev/null 2>&1; then
     exit 1
   fi
 fi
-echo "agent-canvas $(agent-canvas --version 2>/dev/null || echo 'installed')"
+# Verify the agent-canvas that will actually run (first on PATH) is the latest
+# release. An older copy under another npm prefix (e.g. /opt/homebrew vs
+# ~/.npm-global) can shadow the fresh install.
+INSTALLED_CANVAS="$(agent-canvas --version 2>/dev/null | tail -n 1 | tr -d '[:space:]')"
+echo "agent-canvas ${INSTALLED_CANVAS:-unknown} ($(command -v agent-canvas))"
+if [[ -n "${LATEST_CANVAS}" && "${INSTALLED_CANVAS}" != "${LATEST_CANVAS}" ]]; then
+  echo "ERROR: agent-canvas on PATH is ${INSTALLED_CANVAS:-unknown}, but the latest release is ${LATEST_CANVAS}." >&2
+  echo "Copies found on PATH (the first one runs):" >&2
+  type -a agent-canvas 2>/dev/null | sed 's/^/  /' >&2
+  echo "Remove the stale copy (or reorder PATH) and re-run this script." >&2
+  exit 1
+fi
 
 # --- 4. persistent state dir -------------------------------------------------
 # Native mode has no /projects volume: when you create a conversation you pick

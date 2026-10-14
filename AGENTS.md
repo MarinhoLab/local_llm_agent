@@ -122,6 +122,22 @@ Three self-contained stacks plus a notification sidecar:
   the V1 REST API (`POST /api/v1/settings` with
   `agent_settings_diff.mcp_config`, which is applied wholesale — send the full
   desired map). Keep any MCP API key out of git.
+- **Exposing the Canvas on the local network** (the default: `LAN_BIND=on`,
+  `retired-stack/bind_guard.py`): the launcher itself only offers
+  `127.0.0.1` or `0.0.0.0`, and its `--public` mode withholds the session key
+  from the HTML so even the local browser must paste one. The guard keeps the
+  launcher loopback-only on `RETIRED_STACK_PORT+1` and publishes the front door
+  on loopback plus every interface address inside `BIND_ALLOW_CIDRS` (default
+  loopback, `192.168/16`, `100.64/10` = Tailscale's range; `LAN_BIND=off` goes
+  back to a loopback-only stack), pumping raw bytes so SSE and WebSockets are
+  unaffected. Two non-obvious constraints behind this shape: the macOS
+  application firewall silently drops inbound connections for a binary whose
+  path is not in its allow list (bind succeeds, localhost works, every other
+  machine just times out — `run.sh` detects and reports it), and because the
+  published port needs no credential from a same-origin browser, the guard also
+  rejects a `Host` outside the allowlist as cheap insurance against a remote
+  page reaching it via DNS rebinding. Do not replace the guard with
+  `--host 0.0.0.0` or `--public`.
 
 ## Common commands
 

@@ -94,10 +94,12 @@ the local filesystem (there is no container sandbox).
 - Address `http://localhost:8020` (avoids 8000, the vLLM tunnel).
 - LLM profile: Settings → LLM, provider **OpenAI-compatible**, base `http://localhost:8000/v1`, key `local-dgx-key`, model `qwen-local` (the alias all three DGX stacks serve — the client configuration never changes when switching stacks).
 - Optional **ntfy push notifications** for the phone: with `NTFY_ENABLED=true` in `agent_canvas_native/.env`, `run.sh` also starts the notifier daemon (and the per-PC ntfy server from `ntfy/`) that pings you when your agent finishes, needs input, or errors. See `agent_canvas_native/README.md` → *Notifications (ntfy)*.
+- By default it serves this machine's **local** addresses — loopback, `192.168/16`, and Tailscale's `100.64/10` — through `agent_canvas_native/bind_guard.py`, and nothing else (no VLAN, guest Wi-Fi or public interface is ever bound); no browser needs an API key. `LAN_BIND=off` narrows it back to `127.0.0.1` only. See `agent_canvas_native/README.md` → *Reaching the UI from another machine*.
 
 | Variable             | Default                | Description                                                                 |
 |----------------------|------------------------|-----------------------------------------------------------------------------|
 | `AGENT_CANVAS_PORT`  | `8020`                 | Ingress (UI + proxied API) port                                              |
+| `LAN_BIND`           | `on`                   | publish the UI on local addresses only (via `bind_guard.py`); `off` = loopback |
 | `AGENT_CANVAS_STATE` | `./openhands-state`    | Where agent-server keeps per-conversation runtime state (conversations, workspaces, terminal history, logs). API key + LLM profile live in `~/.openhands`. |
 | `VLLM_BASE_URL`      | `http://localhost:8000/v1` | Endpoint `run.sh` checks before launch (the value for the LLM profile)   |
 | `VLLM_API_KEY`       | `local-dgx-key`        | API key for the vLLM preflight check                                       |

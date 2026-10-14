@@ -16,6 +16,8 @@ agent_canvas_native/
 ├── install.sh     # one-time setup: check prereqs, install the npm package,
 │                  #   make the state dir, seed .env (with a random NTFY_TOPIC)
 ├── run.sh         # start the stack (UI + agent-server + automation + ingress)
+├── bind_guard.py  # default path: publishes the UI on local addresses only
+│                  #   only, keeping the launcher itself on loopback
 ├── ntfy_notifier.py  # optional push-notification daemon (started by run.sh)
 ├── example.env    # configuration template (copied to .env by install.sh)
 └── openhands-state/   # agent-server state — git-ignored (created at first run)
@@ -94,17 +96,66 @@ repo's other stack (8000 vLLM):
 
 | Service | Port (native default) | Notes |
 |---|---|---|
-| **Agent Canvas ingress** (UI + proxied API) | `8020` | the only port you normally touch; `run.sh` passes it as `--port` |
+| **Agent Canvas ingress** (UI + proxied API) | `8020` | the port you normally touch; by default this is the `bind_guard.py` front door, with `LAN_BIND=off` it is `--port` |
+| launcher ingress, `LAN_BIND=on` (the default) | `8021` | `AGENT_CANVAS_PORT + 1`; the Agent Canvas launcher stays on `127.0.0.1` here — use `8020` |
 | agent-server | `18000` | internal; proxied at `/api`, `/server_info`, etc. |
 | automation server | `18001` | internal; proxied at `/api/automation` |
 | **ntfy push server** (optional) | `2020` | only when `NTFY_ENABLED=true` + local ntfy (`../ntfy/compose.yml`); `NTFY_PORT` |
 | **vLLM (SSH tunnel)** | `8000` | the model endpoint — a *separate* tunnel, not part of this stack |
 
-Pick a different ingress port with `AGENT_CANVAS_PORT=8030 ./run.sh`. If your
-machine is already using the internal ports (a second Canvas stack, or a
+Pick a different ingress port with `AGENT_CANVAS_PORT=8030 ./run.sh` (`run.sh`
+checks both `PORT` and `PORT+1` first, since `LAN_BIND` is on by default). If
+your machine is already using the internal ports (a second Canvas stack, or a
 sandbox whose own Agent Canvas occupies `18000`/`18001`), override them in
 `.env` via `OH_CANVAS_SAFE_BACKEND_PORT` / `OH_CANVAS_SAFE_AUTOMATION_PORT`
 (see `example.env`).
+
+## Reaching the UI from another machine
+
+Out of the box (`LAN_BIND=on`) the stack answers on this machine's **local**
+addresses, not just `localhost`. `run.sh` runs `bind_guard.py`, which keeps the
+Agent Canvas launcher on loopback at `AGENT_CANVAS_PORT+1` and listens itself on
+`AGENT_CANVAS_PORT` across loopback plus every interface address inside
+`BIND_ALLOW_CIDRS` — by default loopback, `192.168/16` (home LAN) and
+`100.64/10`, the range Tailscale hands out. Anywhere else binds nothing and
+stays silent.
+
+To go back to a loopback-only stack, set `LAN_BIND=off` in `.env` — `run.sh`
+then `exec`s `agent-canvas` directly, with nothing listening off-loopback.
+
+| What | Why it works out this way |
+|---|---|
+| `http://localhost:8020/` | as before, no login |
+| `http://192.168.1.91:8020/`, `http://100.68.103.68:8020/` | the page still comes from the loopback launcher, so the session key is injected as usual — **no key to paste** |
+| a public interface, another VLAN, a guest network | never bound; nothing answers |
+| a page on the internet aiming at this machine | the `Host` check answers 403, so it cannot reach the API through a browser (DNS rebinding) |
+
+Because it is a plain TCP pump, HTTP, SSE and WebSockets all pass through, and
+`NTFY_DEEP_LINK_PREFIX=http://<this-pc>.tail:8020/conversations/` becomes
+tappable from a phone on the tailnet.
+
+**First run on a Mac with the application firewall on:** macOS asks whether to
+let `python3` accept incoming connections — click **Allow** (see the firewall
+gotcha below).
+
+`--host 0.0.0.0` is *not* a shortcut to the same place: it publishes every
+interface and, since the key is then withheld from the HTML, forces the API-key
+screen even on the machine itself.
+
+Two practical gotchas:
+
+- **macOS application firewall.** It keys on the *path* of the binary and
+  silently drops inbound connections for one it has not been told about — the
+  bind succeeds and `localhost` keeps working, so the only symptom is a timeout
+  from every other machine. macOS prompts on the first LAN bind; click **Allow**.
+  A Homebrew or `uv` upgrade that changes the Python path can re-block you.
+  `run.sh` warns when the firewall is on and its own `python3` is missing from
+  the allow list; fix it with the two `socketfilterfw --add/--unblockapp`
+  commands it prints.
+- The guard forwards the browser's own `Host` header to the launcher. Canvas
+  uses same-origin requests and the ingress sends the SPA for any path, so
+  deep links like `/conversations/<id>` work; a bare IP `Host` needs no
+  `BIND_ALLOW_HOSTS` entry, and a MagicDNS name does.
 
 ## State & where things live
 
@@ -228,7 +279,9 @@ prefix still needs a reachable URL for tap-to-open.
 |---|---|
 | `npm install -g` fails with `EACCES` | The global npm prefix isn't writable. `install.sh` falls back to a per-user prefix (`~/.npm-global`) automatically; if you hit it manually, run `npm config set prefix ~/.npm-global` and `export PATH="$HOME/.npm-global/bin:$PATH"`. |
 | `ERROR: 'agent-canvas' not found` | The binary isn't on `PATH`. Add your npm global bin dir: `echo "$(npm prefix -g)/bin"`. `install.sh` and `run.sh` both add `~/.npm-global/bin` if they find it there. |
-| `Cannot start: the following ports are already in use` | The ingress **or** an internal port is taken. Move the ingress (`AGENT_CANVAS_PORT=...`) and/or the internal ports (`OH_CANVAS_SAFE_BACKEND_PORT` / `OH_CANVAS_SAFE_AUTOMATION_PORT`). A second Agent Canvas — including a sandbox's own — occupies the internal ports. |
+| `port ... is already in use` | The ingress **or** an internal port is taken. Move the ingress (`AGENT_CANVAS_PORT=...`) and/or the internal ports (`OH_CANVAS_SAFE_BACKEND_PORT` / `OH_CANVAS_SAFE_AUTOMATION_PORT`). A second Agent Canvas — including a sandbox's own — occupies the internal ports. With the default `LAN_BIND=on`, both `AGENT_CANVAS_PORT` and `+1` must be free. |
+| localhost works, every other machine times out | Usually the macOS application firewall dropping inbound connections for `python3` (run.sh prints the `socketfilterfw` commands when it detects this). Otherwise check the guard's log (`openhands-state/logs/bind_guard.log`) for which addresses it bound — an address outside `BIND_ALLOW_CIDRS` is deliberately not listening. |
+| The browser shows the API-key screen | The request reached the launcher directly on `AGENT_CANVAS_PORT+1`, bypassing the guard. Use the published port. |
 | `Node.js ... is too old` | Install Node ≥ 22.12. |
 | UI loads but the model "doesn't work" | The LLM profile isn't set or the vLLM tunnel is down. Set Settings → LLM and confirm `curl http://localhost:8000/v1/models` works. |
 | `uvx` not found when launching | `uv` isn't on `PATH`. Install it and open a new terminal. |

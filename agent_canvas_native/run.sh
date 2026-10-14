@@ -7,10 +7,14 @@
 # Steps:
 #   1. source agent_canvas_native/.env if present;
 #   2. verify the agent-canvas binary is available (run install.sh if not);
-#   3. preflight: warn if the ingress port is already taken, and warn (without
-#      failing) if the vLLM endpoint is not reachable yet — the Canvas itself
-#      starts fine without it, you just configure the LLM profile afterwards;
-#   4. exec the agent-canvas launcher on AGENT_CANVAS_PORT.
+#   3. preflight: fail unless AGENT_CANVAS_PORT and PORT+1 are both free, and
+#      warn (without failing) if the vLLM endpoint is not reachable yet — the
+#      Canvas itself starts fine without it, you just configure the LLM profile
+#      afterwards;
+#   4. exec bind_guard.py, which runs the agent-canvas launcher on loopback at
+#      PORT+1 and publishes PORT on this machine's local addresses only. With
+#      LAN_BIND=off, step 4 execs agent-canvas on PORT directly instead, with
+#      nothing listening off-loopback.
 #
 # The agent-server keeps per-conversation runtime state (conversations,
 # workspaces, terminal history, logs) under AGENT_CANVAS_STATE
@@ -20,7 +24,8 @@
 # filesystem your user can read.
 #
 # Usage:
-#   ./agent_canvas_native/run.sh
+#   ./agent_canvas_native/run.sh                  # + reachable on LAN/tailnet IPs
+#   LAN_BIND=off ./agent_canvas_native/run.sh     # loopback only
 set -uo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -33,6 +38,9 @@ _env_PORT="${AGENT_CANVAS_PORT:-}"
 _env_STATE="${AGENT_CANVAS_STATE:-}"
 _env_VLLM_URL="${VLLM_BASE_URL:-}"
 _env_VLLM_KEY="${VLLM_API_KEY:-}"
+_env_LAN="${LAN_BIND:-}"
+_env_LAN_CIDRS="${BIND_ALLOW_CIDRS:-}"
+_env_LAN_HOSTS="${BIND_ALLOW_HOSTS:-}"
 
 if [[ -f "${SCRIPT_DIR}/.env" ]]; then
   # shellcheck disable=SC1090,SC1091  # .env is git-ignored / runtime
@@ -45,16 +53,22 @@ if [[ -f "${SCRIPT_DIR}/.env" ]]; then
   set +a
 fi
 
-[[ -n "$_env_PORT" ]]     && AGENT_CANVAS_PORT="$_env_PORT"
-[[ -n "$_env_STATE" ]]    && AGENT_CANVAS_STATE="$_env_STATE"
-[[ -n "$_env_VLLM_URL" ]] && VLLM_BASE_URL="$_env_VLLM_URL"
-[[ -n "$_env_VLLM_KEY" ]] && VLLM_API_KEY="$_env_VLLM_KEY"
-unset _env_PORT _env_STATE _env_VLLM_URL _env_VLLM_KEY
+[[ -n "$_env_PORT" ]]      && AGENT_CANVAS_PORT="$_env_PORT"
+[[ -n "$_env_STATE" ]]     && AGENT_CANVAS_STATE="$_env_STATE"
+[[ -n "$_env_VLLM_URL" ]]  && VLLM_BASE_URL="$_env_VLLM_URL"
+[[ -n "$_env_VLLM_KEY" ]]  && VLLM_API_KEY="$_env_VLLM_KEY"
+[[ -n "$_env_LAN" ]]       && LAN_BIND="$_env_LAN"
+[[ -n "$_env_LAN_CIDRS" ]] && BIND_ALLOW_CIDRS="$_env_LAN_CIDRS"
+[[ -n "$_env_LAN_HOSTS" ]] && BIND_ALLOW_HOSTS="$_env_LAN_HOSTS"
+unset _env_PORT _env_STATE _env_VLLM_URL _env_VLLM_KEY _env_LAN _env_LAN_CIDRS _env_LAN_HOSTS
 
 AGENT_CANVAS_PORT="${AGENT_CANVAS_PORT:-8020}"
 AGENT_CANVAS_STATE="${AGENT_CANVAS_STATE:-${SCRIPT_DIR}/openhands-state}"
 VLLM_BASE_URL="${VLLM_BASE_URL:-http://localhost:8000/v1}"
 VLLM_API_KEY="${VLLM_API_KEY:-local-dgx-key}"
+LAN_BIND="${LAN_BIND:-on}"
+BIND_ALLOW_CIDRS="${BIND_ALLOW_CIDRS:-127.0.0.0/8,::1/128,192.168.0.0/16,100.64.0.0/10}"
+BIND_ALLOW_HOSTS="${BIND_ALLOW_HOSTS:-}"
 
 # Resolve a relative AGENT_CANVAS_STATE against this folder — like docker
 # compose resolves relative volume paths against the compose file — so
@@ -80,18 +94,33 @@ if ! command -v agent-canvas >/dev/null 2>&1; then
 fi
 
 # --- 3a. ingress port preflight ---------------------------------------------
-PORT_IN_USE=0
-if command -v lsof >/dev/null 2>&1; then
-  if lsof -nP -iTCP:"${AGENT_CANVAS_PORT}" -sTCP:LISTEN >/dev/null 2>&1; then
-    PORT_IN_USE=1
-  fi
-fi
-if (( PORT_IN_USE )); then
-  echo "WARNING: port ${AGENT_CANVAS_PORT} is already in use." >&2
-  echo "  Choose another:  AGENT_CANVAS_PORT=8030 ./agent_canvas_native/run.sh" >&2
-  echo "  (8000 = vLLM tunnel, 8020 = this stack's default.)" >&2
+if [[ ! "${AGENT_CANVAS_PORT}" =~ ^[0-9]+$ ]] || (( AGENT_CANVAS_PORT < 1 || AGENT_CANVAS_PORT > 65533 )); then
+  echo "ERROR: AGENT_CANVAS_PORT must be a number between 1 and 65533 (got '${AGENT_CANVAS_PORT}')." >&2
+  echo "       LAN_BIND (on by default) also uses AGENT_CANVAS_PORT + 1, hence the bound." >&2
   exit 1
 fi
+
+# With LAN_BIND on, two ingress ports are needed: the published one (the
+# bind_guard front door) and one above it for the loopback-only launcher.
+PORTS_TO_CHECK=("${AGENT_CANVAS_PORT}")
+LAN_BIND_LC="$(printf '%s' "${LAN_BIND}" | tr '[:upper:]' '[:lower:]')"
+if [[ "${LAN_BIND_LC}" != "off" && "${LAN_BIND_LC}" != "false" && "${LAN_BIND_LC}" != "0" ]]; then
+  LAN_INTERNAL_PORT=$((AGENT_CANVAS_PORT + 1))
+  PORTS_TO_CHECK+=("${LAN_INTERNAL_PORT}")
+else
+  LAN_INTERNAL_PORT=""
+  LAN_BIND_LC="off"
+fi
+for _port in "${PORTS_TO_CHECK[@]}"; do
+  if command -v lsof >/dev/null 2>&1 && lsof -nP -iTCP:"${_port}" -sTCP:LISTEN >/dev/null 2>&1; then
+    echo "WARNING: port ${_port} is already in use." >&2
+    echo "  Choose another:  AGENT_CANVAS_PORT=8030 ./agent_canvas_native/run.sh" >&2
+    echo "  (8000 = vLLM tunnel, 8020 = this stack's default ingress; with" >&2
+    echo "   LAN_BIND=on the launcher also needs AGENT_CANVAS_PORT + 1.)" >&2
+    exit 1
+  fi
+done
+unset _port
 
 # --- 3b. vLLM preflight (warn only) -----------------------------------------
 # The Canvas starts without the model; this only tells you early whether the
@@ -187,10 +216,58 @@ echo "Agent Canvas (native) : http://localhost:${AGENT_CANVAS_PORT}"
 echo "state dir             : ${AGENT_CANVAS_STATE}"
 echo "LLM profile (UI)      : Settings > LLM — provider OpenAI-compatible, base URL ${VLLM_BASE_URL}"
 echo
-# exec replaces the shell so Ctrl+C / the process lifecycle is clean.
-# --public is deliberately NOT passed: local mode auto-generates the API key
-# and injects it into the UI (no login). For a network-exposed stack, switch
-# to:  exec agent-canvas --port "${AGENT_CANVAS_PORT}" --public
-# (requires LOCAL_BACKEND_API_KEY; users then paste the key in the browser).
-exec agent-canvas \
-  --port "${AGENT_CANVAS_PORT}"
+
+if [[ "${LAN_BIND_LC}" == "off" ]]; then
+  # exec replaces the shell so Ctrl+C / the process lifecycle is clean.
+  # --public is deliberately NOT passed: local mode auto-generates the API key
+  # and injects the UI (no login). Nothing listens off-loopback.
+  exec agent-canvas \
+    --port "${AGENT_CANVAS_PORT}"
+fi
+
+# --- LAN_BIND: publish on local addresses only (the default) ----------------
+# The launcher has exactly one bind knob: 127.0.0.1 (default) or everything
+# (--host 0.0.0.0). Neither is what we want, and off-loopback it also refuses to
+# inject the session key, so every browser — including this one — would need a
+# manual key. bind_guard.py instead runs the launcher on loopback at PORT+1 and
+# listens itself on PORT across the addresses inside BIND_ALLOW_CIDRS (by
+# default: loopback, 192.168/16 and 100.64/10 — the Tailscale range). Addresses
+# outside the allowlist bind nothing and answer nothing, and browsing from a
+# LAN or tailnet address still needs no key. See its docstring.
+if ! command -v python3 >/dev/null 2>&1; then
+  echo "ERROR: python3 not found in PATH — bind_guard.py needs it." >&2
+  echo "       Install Python 3 (e.g. brew install python3), or set LAN_BIND=off" >&2
+  echo "       to run the launcher directly with nothing listening off-loopback." >&2
+  exit 1
+fi
+# The macOS application firewall silently drops inbound connections for a
+# binary it has never been asked about — the bind succeeds and localhost keeps
+# working, so the only symptom is a timeout from every other machine. The
+# firewall keys on the binary path, so a Homebrew/uv upgrade that changes that
+# path can quietly turn the stack off-network again.
+if [[ "$(uname)" == "Darwin" ]] && [[ -x /usr/libexec/ApplicationFirewall/socketfilterfw ]]; then
+  FW_STATE="$(/usr/libexec/ApplicationFirewall/socketfilterfw --getglobalstate 2>/dev/null)"
+  case "${FW_STATE}" in *"enabled"*)
+    PY_BIN="$(python3 -c 'import os,sys; print(os.path.realpath(sys.executable))' 2>/dev/null)"
+    if ! /usr/libexec/ApplicationFirewall/socketfilterfw --listapps 2>/dev/null \
+         | grep -Fq -- "${PY_BIN:-!/nonexistent}"; then
+      echo "WARNING: the macOS application firewall is on and ${PY_BIN:-python3} is not" >&2
+      echo "         in its allow list — LAN clients will time out even though the" >&2
+      echo "         guard is listening. Allow it once with:" >&2
+      echo "           sudo /usr/libexec/ApplicationFirewall/socketfilterfw --add ${PY_BIN:-\$(command -v python3)}" >&2
+      echo "           sudo /usr/libexec/ApplicationFirewall/socketfilterfw --unblockapp ${PY_BIN:-\$(command -v python3)}" >&2
+      echo "         (A GUI prompt usually appears on the first LAN bind instead.)" >&2
+    fi
+  ;;
+  esac
+fi
+mkdir -p "${AGENT_CANVAS_STATE}/logs"
+export BIND_PUBLIC_PORT="${AGENT_CANVAS_PORT}"
+export BIND_INTERNAL_PORT="${LAN_INTERNAL_PORT}"
+export BIND_ALLOW_CIDRS BIND_ALLOW_HOSTS
+export BIND_GUARD_LOG="${AGENT_CANVAS_STATE}/logs/bind_guard.log"
+echo "LAN_BIND              : on — also served on this machine's LAN/tailnet IPs"
+echo "                        (see the 'listening on' lines below; allowlist: ${BIND_ALLOW_CIDRS}${BIND_ALLOW_HOSTS:+ + hosts})"
+echo "                        LAN_BIND=off in .env makes it loopback-only again"
+echo
+exec python3 "${SCRIPT_DIR}/bind_guard.py" agent-canvas --host 127.0.0.1 --port "${LAN_INTERNAL_PORT}"

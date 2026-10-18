@@ -20,6 +20,7 @@ agent_canvas_native/
 │                  #   only, keeping the launcher itself on loopback
 ├── ntfy_notifier.py  # optional push-notification daemon (started by run.sh)
 ├── example.env    # configuration template (copied to .env by install.sh)
+├── uv-constraints.txt  # holds back dependency releases that break the agent-server
 └── openhands-state/   # agent-server state — git-ignored (created at first run)
 ```
 
@@ -285,6 +286,7 @@ prefix still needs a reachable URL for tap-to-open.
 | The browser shows the API-key screen | The request reached the launcher directly on `AGENT_CANVAS_PORT+1`, bypassing the guard. Use the published port. |
 | `Node.js ... is too old` | Install Node ≥ 22.12. |
 | UI loads but the model "doesn't work" | The LLM profile isn't set or the vLLM tunnel is down. Set Settings → LLM and confirm `curl http://localhost:8000/v1/models` works. |
+| Every conversation errors on its first LLM call (`cannot import name '...' from 'mcp.types'` or a similar `ImportError` in `openhands-state/logs/agent-canvas.<date>.log`) | A floating dependency of the agent-server released a breaking version. `run.sh` exports `UV_CONSTRAINT=uv-constraints.txt` to hold such releases back; add the offending package there (e.g. `litellm<1.106`) and rerun `run.sh`. |
 | `uvx` not found when launching | `uv` isn't on `PATH`. Install it and open a new terminal. |
 | Notifier: `waiting for agent-server session API key...` loops | The Canvas hasn't started yet or the key file was removed. Wait for the stack to come up, or set `LOCAL_BACKEND_API_KEY` in `.env`. Log: `openhands-state/logs/ntfy.log`. |
 | Notifier: `WARN: ntfy publish failed HTTP 401/403` | Only when you enabled account auth (`NTFY_AUTH_FILE`): `NTFY_AUTH_TOKEN` missing/wrong, or the token lacks write access. Re-create it (`../ntfy/README.md` → *Authentication*). |

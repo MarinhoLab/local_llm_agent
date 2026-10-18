@@ -259,6 +259,10 @@ fi
 # state dir is ~/.openhands/agent-canvas; we point it at AGENT_CANVAS_STATE so
 # the state lives next to this folder (git-ignored) instead of in $HOME.
 export OH_CANVAS_SAFE_STATE_DIR="${AGENT_CANVAS_STATE}"
+# The launcher pins only the openhands-* packages it runs through uvx; every
+# other dependency floats. uv-constraints.txt holds back the known-bad
+# releases (see its comments). A UV_CONSTRAINT you set yourself wins.
+export UV_CONSTRAINT="${UV_CONSTRAINT:-${SCRIPT_DIR}/uv-constraints.txt}"
 # Internal service ports default to 18000/18001. They are NOT shifted with the
 # ingress port, so if they collide on your machine (a second Canvas stack, or a
 # sandbox whose own Agent Canvas occupies them) set OH_CANVAS_SAFE_BACKEND_PORT

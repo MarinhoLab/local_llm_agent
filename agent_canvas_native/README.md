@@ -113,9 +113,9 @@ sandbox whose own Agent Canvas occupies `18000`/`18001`), override them in
 ## Reaching the UI from another machine
 
 Out of the box (`LAN_BIND=on`) the stack answers on this machine's **local**
-addresses, not just `localhost`. `run.sh` runs `bind_guard.py`, which keeps the
-Agent Canvas launcher on loopback at `AGENT_CANVAS_PORT+1` and listens itself on
-`AGENT_CANVAS_PORT` across loopback plus every interface address inside
+addresses, not just `localhost`. `run.sh` keeps the Agent Canvas launcher on
+loopback at `AGENT_CANVAS_PORT+1` and starts `bind_guard.py` beside it, a small
+proxy that listens on `AGENT_CANVAS_PORT` across loopback plus every interface address inside
 `BIND_ALLOW_CIDRS` — by default loopback, `192.168/16` (home LAN) and
 `100.64/10`, the range Tailscale hands out. Anywhere else binds nothing and
 stays silent.
@@ -132,7 +132,8 @@ then `exec`s `agent-canvas` directly, with nothing listening off-loopback.
 
 Because it is a plain TCP pump, HTTP, SSE and WebSockets all pass through, and
 `NTFY_DEEP_LINK_PREFIX=http://<this-pc>.tail:8020/conversations/` becomes
-tappable from a phone on the tailnet.
+tappable from a phone on the tailnet. The guard only proxies: Ctrl+C stops the
+launcher as with `LAN_BIND=off`, and the guard exits along with it.
 
 **First run on a Mac with the application firewall on:** macOS asks whether to
 let `python3` accept incoming connections — click **Allow** (see the firewall
@@ -280,7 +281,7 @@ prefix still needs a reachable URL for tap-to-open.
 | `npm install -g` fails with `EACCES` | The global npm prefix isn't writable. `install.sh` falls back to a per-user prefix (`~/.npm-global`) automatically; if you hit it manually, run `npm config set prefix ~/.npm-global` and `export PATH="$HOME/.npm-global/bin:$PATH"`. |
 | `ERROR: 'agent-canvas' not found` | The binary isn't on `PATH`. Add your npm global bin dir: `echo "$(npm prefix -g)/bin"`. `install.sh` and `run.sh` both add `~/.npm-global/bin` if they find it there. |
 | `port ... is already in use` | The ingress **or** an internal port is taken. Move the ingress (`AGENT_CANVAS_PORT=...`) and/or the internal ports (`OH_CANVAS_SAFE_BACKEND_PORT` / `OH_CANVAS_SAFE_AUTOMATION_PORT`). A second Agent Canvas — including a sandbox's own — occupies the internal ports. With the default `LAN_BIND=on`, both `AGENT_CANVAS_PORT` and `+1` must be free. |
-| localhost works, every other machine times out | Usually the macOS application firewall dropping inbound connections for `python3` (run.sh prints the `socketfilterfw` commands when it detects this). Otherwise check the guard's log (`openhands-state/logs/bind_guard.log`) for which addresses it bound — an address outside `BIND_ALLOW_CIDRS` is deliberately not listening. |
+| localhost works, every other machine times out | Usually the macOS application firewall dropping inbound connections for `python3` (run.sh prints the `socketfilterfw` commands when it detects this). Otherwise check the guard's `listening on` lines in the run.sh output for which addresses it bound — an address outside `BIND_ALLOW_CIDRS` is deliberately not listening. |
 | The browser shows the API-key screen | The request reached the launcher directly on `AGENT_CANVAS_PORT+1`, bypassing the guard. Use the published port. |
 | `Node.js ... is too old` | Install Node ≥ 22.12. |
 | UI loads but the model "doesn't work" | The LLM profile isn't set or the vLLM tunnel is down. Set Settings → LLM and confirm `curl http://localhost:8000/v1/models` works. |

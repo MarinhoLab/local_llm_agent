@@ -6,8 +6,8 @@ machine, and `agent-canvas --host 0.0.0.0` is the wrong fix: it publishes the UI
 on *every* interface (VLANs, guest Wi-Fi, tunnels) and drops the session key
 from the HTML, so even your own laptop has to paste a key.
 
-This is the middle ground. It starts the launcher yourself on 127.0.0.1 with an
-ingress port of its own (INTERNAL = PUBLIC + 1), then listens itself on PUBLIC
+This is the middle ground. run.sh runs the launcher on 127.0.0.1 with an
+ingress port of its own (INTERNAL = PUBLIC + 1); this guard listens on PUBLIC
 across every address that falls inside BIND_ALLOW_CIDRS and proxies to it.
 Addresses outside the allowlist are never bound, so nothing answers there.
 Because the browser still loads the page through the loopback launcher, the
@@ -26,7 +26,11 @@ Configuration (environment variables, normally set by run.sh from .env):
     BIND_ALLOW_HOSTS=            # extra Host names, e.g. mac.tailnet.ts.net
     BIND_PUBLIC_PORT=8020        # what browsers and the launcher print
     BIND_INTERNAL_PORT=8021      # the launcher's loopback-only ingress
-    BIND_GUARD_LOG=<state>/logs/bind_guard.log
+
+The guard is only a proxy: it neither starts nor stops the launcher, so the
+launcher's own lifecycle (Ctrl+C, shutting down its services) is exactly the
+LAN_BIND=off one. The guard exits when its parent process does — run.sh
+starts it and then execs the launcher, so that parent *is* the launcher.
 
 The API key is never read or printed here: the launcher owns it.
 """
@@ -37,11 +41,11 @@ import ipaddress
 import os
 import re
 import select
-import signal
 import socket
 import subprocess
 import sys
 import threading
+import time
 from typing import Sequence
 
 DEFAULT_ALLOW = "127.0.0.0/8,::1/128,192.168.0.0/16,100.64.0.0/10"
@@ -149,41 +153,45 @@ def reject(sock: socket.socket, why: str) -> None:
         pass
 
 
-def pump(a: socket.socket, b: socket.socket) -> None:
-    """Copy both directions until either side closes. No idle timeout: a
-    WebSocket session can sit quiet for minutes between agent events."""
-    for s in (a, b):
-        s.setblocking(False)
+def _copy(src: socket.socket, dst: socket.socket) -> None:
+    """One direction of pump(): blocking recv -> sendall until EOF, then pass
+    the EOF on as a half-close so the other direction can still finish.
+
+    Blocking on purpose. The old select() loop used non-blocking sockets, and
+    sendall() on a non-blocking socket raises as soon as the peer's buffer is
+    full — any response bigger than the socket buffers, read by a client
+    slower than the launcher (a LAN laptop, a large conversation history), was
+    cut off mid-body."""
     try:
         while True:
-            try:
-                readable, _, bad = select.select((a, b), (), (a, b), SELECT_POLL)
-            except (OSError, ValueError):
-                return
-            if bad:
-                return
-            if not readable:
-                continue
-            for src in readable:
-                dst = b if src is a else a
-                try:
-                    data = src.recv(COPY_BYTES)
-                except (BlockingIOError, InterruptedError):
-                    continue
-                except OSError:
-                    return
-                if not data:
-                    return
-                try:
-                    dst.sendall(data)
-                except OSError:
-                    return
-    finally:
-        for s in (a, b):
+            data = src.recv(COPY_BYTES)
+            if not data:
+                break
+            dst.sendall(data)
+    except OSError:
+        # A reset on either side: tear down both directions, not just this one.
+        for s in (src, dst):
             try:
                 s.shutdown(socket.SHUT_RDWR)
             except OSError:
                 pass
+        return
+    try:
+        dst.shutdown(socket.SHUT_WR)
+    except OSError:
+        pass
+
+
+def pump(a: socket.socket, b: socket.socket) -> None:
+    """Copy both directions until both sides are done. No idle timeout: a
+    WebSocket session can sit quiet for minutes between agent events (dead
+    peers are found by TCP keepalive instead, see Connection)."""
+    for s in (a, b):
+        s.settimeout(None)
+    back = threading.Thread(target=_copy, args=(b, a), daemon=True)
+    back.start()
+    _copy(a, b)
+    back.join()
 
 
 class Connection(threading.Thread):
@@ -198,7 +206,11 @@ class Connection(threading.Thread):
 
     def run(self) -> None:
         head = b""
+        remote = None
         try:
+            # With no idle timeout, a laptop that sleeps or leaves the network
+            # would otherwise pin this thread and two fds forever.
+            self.client.setsockopt(socket.SOL_SOCKET, socket.SO_KEEPALIVE, 1)
             self.client.settimeout(15)
             while b"\r\n\r\n" not in head and len(head) < HEAD_LIMIT:
                 chunk = self.client.recv(4096)
@@ -223,14 +235,16 @@ class Connection(threading.Thread):
             if head:
                 remote.sendall(head)
             pump(self.client, remote)
-            remote.close()
         except OSError:
             pass
         finally:
-            try:
-                self.client.close()
-            except OSError:
-                pass
+            for s in (remote, self.client):
+                if s is None:
+                    continue
+                try:
+                    s.close()
+                except OSError:
+                    pass
 
 
 class Gateway:
@@ -267,19 +281,28 @@ class Gateway:
             raise SystemExit(f"bind_guard: bound nothing on port {self.port} — is it in use?")
 
     def serve_forever(self, keep_going=lambda: True) -> None:
+        # Never return early on an error while still alive: main() treats a
+        # return as "shut everything down", and the old early return left the
+        # port bound with nobody accepting on it.
         while self._alive and keep_going():
             try:
                 readable, _, _ = select.select(self.servers, (), (), SELECT_POLL)
-            except InterruptedError:
+            except (OSError, ValueError) as exc:
+                if not self._alive:
+                    return
+                log(f"select failed ({exc}) — retrying")
+                time.sleep(1)
                 continue
-            except (OSError, ValueError, select.error):
-                return
             for srv in readable:
                 try:
                     client, peer = srv.accept()
-                except OSError:
+                except OSError as exc:
                     if not self._alive:
                         return
+                    # EMFILE and friends leave the socket readable: back off
+                    # instead of spinning at 100% CPU.
+                    log(f"accept failed ({exc.strerror or exc}) — backing off")
+                    time.sleep(0.5)
                     continue
                 Connection(client, peer, self.allow, self.upstream).start()
 
@@ -293,60 +316,6 @@ class Gateway:
                 pass
 
 
-class Child:
-    """The loopback-only launcher, with its output in a log file."""
-
-    LOG_LIMIT = 8 << 20
-
-    def __init__(self, cmd: Sequence[str], log_path: str | None):
-        self.cmd = list(cmd)
-        self.log_path = log_path
-        self._log = None
-        self._stopped = False
-        if log_path:
-            try:
-                # Append, but rotate once it passes LOG_LIMIT so a stack left
-                # running for months cannot fill the disk with a copy of the
-                # launcher's own output.
-                mode = "ab"
-                if os.path.exists(log_path) and os.path.getsize(log_path) > self.LOG_LIMIT:
-                    mode = "wb"
-                self._log = open(log_path, mode, buffering=0)
-            except OSError as exc:
-                print(f"[bind_guard] warning: cannot write {log_path} ({exc.strerror})"
-                      " — launcher output goes to this terminal instead", flush=True)
-                self.log_path = None
-            else:
-                log(f"launcher output -> {log_path}")
-        self.proc = subprocess.Popen(
-            self.cmd,
-            stdout=self._log if self._log else None,
-            stderr=subprocess.STDOUT if self._log else None,
-        )
-
-    def alive(self) -> bool:
-        return self.proc.poll() is None
-
-    def stop(self) -> None:
-        # Idempotent: a second Ctrl+C re-enters the signal handler while the
-        # first stop() is still waiting on the child.
-        if self._stopped:
-            return
-        self._stopped = True
-        if self.alive():
-            self.proc.terminate()
-            try:
-                self.proc.wait(timeout=10)
-            except subprocess.TimeoutExpired:
-                self.proc.kill()
-        if self._log:
-            try:
-                self._log.close()
-            except OSError:
-                pass
-            self._log = None
-
-
 def port_from_env(name: str, fallback: int) -> int:
     raw = os.environ.get(name)
     if raw is None or not raw.strip():
@@ -357,47 +326,30 @@ def port_from_env(name: str, fallback: int) -> int:
         raise SystemExit(f"bind_guard: {name}={raw!r} is not a port number")
 
 
-def main(argv: Sequence[str] | None = None) -> int:
-    env = os.environ
-    cmd = list(sys.argv[1:] if argv is None else argv)
-    if not cmd or cmd[0] in ("-h", "--help"):
+def main() -> int:
+    if any(a in ("-h", "--help") for a in sys.argv[1:]):
         print(__doc__)
         return 0
-
+    env = os.environ
     public_port = port_from_env("BIND_PUBLIC_PORT", 8020)
     internal_port = port_from_env("BIND_INTERNAL_PORT", public_port + 1)
     allow = Allowlist(parse_cidrs(env.get("BIND_ALLOW_CIDRS", DEFAULT_ALLOW)), parse_list(env.get("BIND_ALLOW_HOSTS", "")))
-    log_path = env.get("BIND_GUARD_LOG") or None
-
     if internal_port == public_port:
         raise SystemExit("bind_guard: BIND_INTERNAL_PORT must differ from BIND_PUBLIC_PORT")
 
-    child = Child(cmd, log_path)
+    # run.sh starts this in the background and then execs the launcher, so our
+    # parent pid *is* the launcher. Once it is gone we are reparented, and we
+    # exit too, rather than keep holding the public port for the next run.
+    parent = os.getppid()
     gateway = Gateway(public_port, ("127.0.0.1", internal_port), allow)
-    try:
-        gateway.listen()
-    except SystemExit:
-        child.stop()
-        raise
-
-    def on_signal(signum, _frame):
-        log(f"signal {signum} — stopping")
-        gateway.close()
-        child.stop()
-        raise SystemExit(128 + signum)
-
-    for sig in (signal.SIGTERM, signal.SIGINT, signal.SIGHUP):
-        signal.signal(sig, on_signal)
-
-    log(f"child launcher pid {child.proc.pid} on http://127.0.0.1:{internal_port} (loopback only)")
+    gateway.listen()
+    log(f"proxying to http://127.0.0.1:{internal_port} while pid {parent} runs")
     log(f"allowed addresses: {allow.describes()}")
-
-    gateway.serve_forever(keep_going=child.alive)
-    rc = child.proc.wait()
-    gateway.close()
-    if rc:
-        log(f"launcher exited with status {rc} — see {log_path or 'its output above'}")
-    return rc
+    try:
+        gateway.serve_forever(keep_going=lambda: os.getppid() == parent)
+    finally:
+        gateway.close()
+    return 0
 
 
 if __name__ == "__main__":

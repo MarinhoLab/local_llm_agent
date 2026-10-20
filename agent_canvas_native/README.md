@@ -70,12 +70,13 @@ the SDK gets upgraded.
 
 When it's up, the launcher prints a summary. Open:
 
-- **Agent Canvas**: <http://localhost:8020> — the chat UI.
+- **Agent Canvas**: <http://localhost:8020> — the chat UI. The same stack also
+  answers on this machine's LAN / Tailscale addresses (`run.sh` prints them).
 
-There is no login: on first start the agent-server auto-generates an API key
-and injects it into the UI (local mode). The key is persisted at
-`~/.openhands/agent-canvas/api-key.txt` (see [State & where things
-live](#state--where-things-live)), so it stays stable across restarts.
+The first screen asks for an **API key**: paste the value of
+`LOCAL_BACKEND_API_KEY` from `agent_canvas_native/.env` (`install.sh` generated
+it). One paste per browser — it's then remembered. See
+[Public mode and the API key](#public-mode-and-the-api-key).
 
 ## Pointing it at your vLLM
 
@@ -99,6 +100,38 @@ the Canvas itself starts fine without the model; you just add the profile
 once the tunnel is up. Start the tunnel with
 `ssh -L 8000:localhost:8000 USER@DGX_SPARK_IP`.
 
+## Public mode and the API key
+
+`run.sh` starts the Canvas in the launcher's **public mode**, i.e. it execs:
+
+```bash
+agent-canvas --host 0.0.0.0 --port 8020 --public
+```
+
+Two things follow from that. The UI is served on **all interfaces**, so it is
+reachable from the LAN and over Tailscale, not just `localhost`. And the API key
+is **not** injected into the HTML — the browser shows a key screen and you paste
+`LOCAL_BACKEND_API_KEY` once (per browser; it is then remembered). That key is
+the `X-Session-API-Key` every request carries, checked by both the agent-server
+and the automation backend, so no request without it gets through.
+
+| `.env` knob | Default | Meaning |
+|---|---|---|
+| `CANVAS_PUBLIC` | `true` | `false` = local mode: loopback-only, key auto-generated and injected, no key screen |
+| `CANVAS_BIND_HOST` | `0.0.0.0` | address to serve; `127.0.0.1` with `CANVAS_PUBLIC=false` for a loopback-only stack |
+| `LOCAL_BACKEND_API_KEY` | random, filled in by `install.sh` | the key you paste in the browser; also what the notifier authenticates with |
+
+**Treat that key as the credential for this machine.** Agents run as your user
+with full filesystem access, so anyone who has the key and can reach the port
+can run anything the agents can. `install.sh` generates a 32-byte random key and
+restricts `.env` to `600`; `run.sh` refuses to start if the value is still empty
+or the `REPLACE_ME` placeholder. Rotate by replacing the value in `.env` and
+restarting — clients then paste the new one once. If you want the old behaviour
+with nothing listening off-loopback and no login screen, set `CANVAS_PUBLIC=false`.
+
+With a TLS-terminating proxy or an SSH tunnel (`ssh -L 8020:localhost:8020
+host`) you get the same exposure over an encrypted channel instead.
+
 ## Ports
 
 The internal ports (`18000`/`18001`) are **fixed** defaults and do *not* move
@@ -107,7 +140,7 @@ repo's other stack (8000 vLLM):
 
 | Service | Port (native default) | Notes |
 |---|---|---|
-| **Agent Canvas ingress** (UI + proxied API) | `8020` | the only port you normally touch; `run.sh` passes it as `--port` |
+| **Agent Canvas ingress** (UI + proxied API) | `8020` | the only port you normally touch; `run.sh` passes it as `--port`, on all interfaces in public mode |
 | agent-server | `18000` | internal; proxied at `/api`, `/server_info`, etc. |
 | automation server | `18001` | internal; proxied at `/api/automation` |
 | **ntfy push server** (optional) | `2020` | only when `NTFY_ENABLED=true` + local ntfy (`../ntfy/compose.yml`); `NTFY_PORT` |
@@ -142,12 +175,15 @@ openhands-state/
 `openhands-state/` is git-ignored. (A `tmux/` socket dir is added here too when
 agents open terminals.)
 
-**2. `~/.openhands/agent-canvas/`** — the credentials. The launcher auto-generates
-and pins the **session API key** (`api-key.txt`, used as `X-Session-API-Key`)
-and the **encryption secret key** (`secret-key.txt`) here. They live in `$HOME`
+**2. `~/.openhands/agent-canvas/`** — the credentials. The launcher pins the
+**session API key** (`api-key.txt`, used as `X-Session-API-Key`) and the
+**encryption secret key** (`secret-key.txt`) here. They live in `$HOME`
 deliberately, *independent of the state dir*, so they stay stable across
-restarts. To rotate a key, delete that file (and restart). Set
-`LOCAL_BACKEND_API_KEY` to pin the API key explicitly instead.
+restarts. In the default public mode the API key comes from
+`LOCAL_BACKEND_API_KEY` in `agent_canvas_native/.env`, so that file is the one
+to read; without it the launcher falls back to generating `api-key.txt` (which
+is also what it does in local mode). To rotate a key, set the `.env` value (or
+delete the file) and restart.
 
 **3. `~/.openhands/`** — your saved **LLM profile and agent settings**:
 `settings.json`, `secrets.json`, and `profiles/` (e.g. the `qwen-local` profile
@@ -252,6 +288,9 @@ prefix still needs a reachable URL for tap-to-open.
 | Notifier: `WARN: ntfy publish failed HTTP 401/403` | Only when you enabled account auth (`NTFY_AUTH_FILE`): `NTFY_AUTH_TOKEN` missing/wrong, or the token lacks write access. Re-create it (`../ntfy/README.md` → *Authentication*). |
 | ntfy container exits and logs show the CLI help | The `serve` subcommand is missing. `compose.yml` sets `command: serve`; if you ran the image directly, add `serve` after the image name. |
 | Phone gets no notifications | Check the ntfy server is healthy (`docker compose ps`), the topic matches exactly, and (Android) instant delivery is on. Deep links need the phone on Tailscale and port `8020` reachable. |
+| The UI asks for an API key on load | Expected — that is public mode (the default). Paste `LOCAL_BACKEND_API_KEY` from `agent_canvas_native/.env`; it is remembered per browser. To drop the key screen entirely, set `CANVAS_PUBLIC=false` (loopback-only, key auto-injected). |
+| `public mode needs a real LOCAL_BACKEND_API_KEY` | `run.sh` refuses to expose the stack without a key. Generate one into `.env`: `node -e 'console.log("LOCAL_BACKEND_API_KEY="+require("crypto").randomBytes(32).toString("base64url"))' >> agent_canvas_native/.env` — or re-run `install.sh` on a fresh `.env`, which does it for you. |
+| Works on `localhost`, times out from another machine | Public mode binds all interfaces, but the macOS application firewall silently drops inbound connections for binaries it has never been asked about — the bind succeeds and `localhost` keeps working, so a timeout is the only symptom. Check `sudo /usr/libexec/ApplicationFirewall/socketfilterfw --getglobalstate` and allow the binary it complains about. A GUI prompt usually appears on the first listen instead. |
 
 ## Uninstall
 

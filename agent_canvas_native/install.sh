@@ -154,19 +154,32 @@ if [[ -f "${SCRIPT_DIR}/.env" ]]; then
 else
   cp "${SCRIPT_DIR}/example.env" "${SCRIPT_DIR}/.env"
   echo "created .env from example.env — edit it to taste"
-  # On an unauthenticated ntfy server the topic name is the credential (see
-  # ntfy/README.md), so replace the example's fixed default with a random one.
-  RANDOM_TOPIC="$(node -e '
-      const fs = require("fs");
-      const topic = "agent-canvas-" + require("crypto").randomBytes(8).toString("hex");
+  # Two template values are secrets and must never survive as placeholders: the
+  # ntfy topic (on an unauthenticated server the topic name IS the credential,
+  # see ntfy/README.md) and the Canvas API key, which since public mode is the
+  # default guards a stack whose agents run as you on this filesystem.
+  RANDOM_SECRETS="$(node -e '
+      const fs = require("fs"), c = require("crypto");
+      const rand = (n) => c.randomBytes(n).toString("base64url");
       const p = process.argv[1];
-      fs.writeFileSync(p, fs.readFileSync(p, "utf8").replace(/^NTFY_TOPIC=.*$/m, "NTFY_TOPIC=" + topic));
+      let t = fs.readFileSync(p, "utf8");
+      const topic = "agent-canvas-" + rand(8);
+      const key = rand(32);
+      t = t.replace(/^NTFY_TOPIC=.*$/m, "NTFY_TOPIC=" + topic)
+           .replace(/^LOCAL_BACKEND_API_KEY=.*$/m, "LOCAL_BACKEND_API_KEY=" + key);
+      fs.writeFileSync(p, t, {mode: 0o600});
       console.log(topic);
     ' "${SCRIPT_DIR}/.env" 2>/dev/null)"
-  if [[ -n "${RANDOM_TOPIC}" ]]; then
-    echo "random NTFY_TOPIC set (${RANDOM_TOPIC}) — use the same topic on the phone and in ntfy/.env once you enable notifications"
+  if [[ -n "${RANDOM_SECRETS}" ]]; then
+    echo "random NTFY_TOPIC set (${RANDOM_SECRETS}) — use the same topic on the phone and in ntfy/.env once you enable notifications"
+    chmod 600 "${SCRIPT_DIR}/.env" 2>/dev/null || true
+    echo "Canvas API key generated — the UI runs in PUBLIC mode (all interfaces):"
+    echo "  paste the value of LOCAL_BACKEND_API_KEY from ${SCRIPT_DIR}/.env"
+    echo "  into the browser's key screen (once per browser). CANVAS_PUBLIC=false"
+    echo "  in .env switches back to loopback-only with no login."
   else
-    echo "WARNING: could not randomize NTFY_TOPIC — set an unguessable one in .env before enabling ntfy." >&2
+    echo "WARNING: could not fill in NTFY_TOPIC / LOCAL_BACKEND_API_KEY — set both" >&2
+    echo "         in ${SCRIPT_DIR}/.env before enabling ntfy or starting in public mode." >&2
   fi
 fi
 

@@ -7,9 +7,11 @@
 # Steps:
 #   1. source agent_canvas_native/.env if present;
 #   2. verify the agent-canvas binary is available (run install.sh if not);
-#   3. preflight: warn if the ingress port is already taken, and warn (without
-#      failing) if the vLLM endpoint is not reachable yet — the Canvas itself
-#      starts fine without it, you just configure the LLM profile afterwards;
+#   3. pin the Python the launcher's uvx environments use to 3.14 and verify
+#      that interpreter exists (install.sh installs it via Homebrew); warn if
+#      the ingress port is already taken, and warn (without failing) if the
+#      vLLM endpoint is not reachable yet — the Canvas itself starts fine
+#      without it, you just configure the LLM profile afterwards;
 #   4. exec the agent-canvas launcher on AGENT_CANVAS_PORT.
 #
 # The agent-server keeps per-conversation runtime state (conversations,
@@ -77,6 +79,32 @@ fi
 if ! command -v agent-canvas >/dev/null 2>&1; then
   echo "ERROR: 'agent-canvas' not found. Run ./agent_canvas_native/install.sh first." >&2
   exit 1
+fi
+
+# --- 2b. Python and tmux ----------------------------------------------------
+# The launcher runs the agent-server and the automation backend through
+# `uv tool uvx` and pins only the openhands-* packages, so the interpreter
+# floats: without a request uv takes the newest python3 on PATH (or the newest
+# Homebrew python it can find), and this stack does not build on 3.15. Pin it
+# to 3.14 — install.sh installs python@3.14 via Homebrew — unless the caller
+# set UV_PYTHON (or a uv-managed 3.14) themselves.
+if ! command -v uv >/dev/null 2>&1; then
+  echo "ERROR: 'uv' not found in PATH — the launcher runs the agent-server through it." >&2
+  echo "  Install it:  brew install uv   (or: curl -LsSf https://astral.sh/uv/install.sh | sh)" >&2
+  exit 1
+fi
+export UV_PYTHON="${UV_PYTHON:-3.14}"
+if ! CANVAS_PYTHON="$(uv python find "${UV_PYTHON}" 2>/dev/null)"; then
+  echo "ERROR: no Python ${UV_PYTHON} interpreter found for uv (UV_PYTHON=${UV_PYTHON})." >&2
+  echo "  Install it:  brew install python@${UV_PYTHON}    (or: uv python install ${UV_PYTHON})" >&2
+  echo "  Check it:    uv python find ${UV_PYTHON}" >&2
+  exit 1
+fi
+# The agent-server's terminal needs tmux; without it the SDK falls back to a
+# subprocess-based terminal and warns on every conversation start.
+if ! command -v tmux >/dev/null 2>&1; then
+  echo "WARNING: tmux is not installed — agents fall back to the less stable" >&2
+  echo "         subprocess-based terminal. Install it:  brew install tmux" >&2
 fi
 
 # --- 3a. ingress port preflight ---------------------------------------------
@@ -155,14 +183,16 @@ if [[ "${NTFY_ENABLED:-}" == "true" || "${NTFY_ENABLED:-}" == "1" ]]; then
     fi
   fi
 
-  # 4b. notifier daemon (Python stdlib only — no venv needed). Point it at the
+  # 4b. notifier daemon (Python stdlib only — no venv needed). Run it with the
+  #     same pinned interpreter as the rest of the stack, so it does not pick up
+  #     whatever python3 happens to be first on PATH. Point it at the
   #     agent-server through the ingress (AGENT_CANVAS_PORT), which proxies
   #     /api; NTFY_BASE_URL overrides this if the agent-server is reachable
   #     directly on another port.
   NOTIFY_LOG="${STATE_LOG_DIR}/ntfy.log"
   NTFY_BASE_URL="http://localhost:${AGENT_CANVAS_PORT}" \
   NTFY_STATE_FILE="${AGENT_CANVAS_STATE}/ntfy_notifier_state.json" \
-    nohup python3 "${SCRIPT_DIR}/ntfy_notifier.py" \
+    nohup "${CANVAS_PYTHON}" "${SCRIPT_DIR}/ntfy_notifier.py" \
     >>"${NOTIFY_LOG}" 2>&1 < /dev/null &
   NOTIFY_PID=$!
   if [[ -n "${NOTIFY_PID}" ]] && kill -0 "${NOTIFY_PID}" 2>/dev/null; then
@@ -189,6 +219,7 @@ export UV_CONSTRAINT="${UV_CONSTRAINT:-${SCRIPT_DIR}/uv-constraints.txt}"
 echo
 echo "Agent Canvas (native) : http://localhost:${AGENT_CANVAS_PORT}"
 echo "state dir             : ${AGENT_CANVAS_STATE}"
+echo "python (uvx envs)     : ${CANVAS_PYTHON}"
 echo "LLM profile (UI)      : Settings > LLM — provider OpenAI-compatible, base URL ${VLLM_BASE_URL}"
 echo
 # exec replaces the shell so Ctrl+C / the process lifecycle is clean.

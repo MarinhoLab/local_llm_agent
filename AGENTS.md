@@ -122,6 +122,16 @@ Three self-contained stacks plus a notification sidecar:
   the V1 REST API (`POST /api/v1/settings` with
   `agent_settings_diff.mcp_config`, which is applied wholesale — send the full
   desired map). Keep any MCP API key out of git.
+- **the retired client runs in public mode by default.** `run.sh` execs
+  `retired-stack --host 0.0.0.0 --port 8020 --public`, so the UI answers on the
+  LAN / tailnet addresses too and the API key is not injected into the page —
+  every browser pastes `LOCAL_BACKEND_API_KEY` (generated into
+  `retired-stack/.env` by install.sh) once. That key is the only gate, and
+  agents run as your user on the local filesystem, so it is effectively a shell
+  credential; `run.sh` refuses to start without it. `CANVAS_PUBLIC=false`
+  restores loopback-only mode with the key auto-injected and no login. (An
+  earlier attempt at this used a custom `bind_guard.py` proxy — reverted, it
+  broke too much.)
 - **the retired client runtime = Python 3.14 + tmux.** The launcher runs retired-server
   and the automation backend through `uv tool uvx` and pins only the
   `the retired client-*` packages, so the interpreter floats to whatever `python3` is

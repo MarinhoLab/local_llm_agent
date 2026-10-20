@@ -12,7 +12,8 @@
 #      the ingress port is already taken, and warn (without failing) if the
 #      vLLM endpoint is not reachable yet — the Canvas itself starts fine
 #      without it, you just configure the LLM profile afterwards;
-#   4. exec the agent-canvas launcher on AGENT_CANVAS_PORT.
+#   4. exec the agent-canvas launcher on AGENT_CANVAS_PORT, in public mode
+#      (--host CANVAS_BIND_HOST --public) unless CANVAS_PUBLIC=false.
 #
 # The agent-server keeps per-conversation runtime state (conversations,
 # workspaces, terminal history, logs) under AGENT_CANVAS_STATE
@@ -23,6 +24,12 @@
 #
 # Usage:
 #   ./agent_canvas_native/run.sh
+#
+# By default the Canvas runs in public mode: the API key is not injected into
+# the page, so every browser (this machine included) pastes it once. Set
+# CANVAS_PUBLIC=false for the old local mode, where the launcher generates a
+# key, writes it to ~/.openhands/agent-canvas/api-key.txt and injects it, so
+# nothing listens off-loopback and no key entry screen appears.
 set -uo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -35,6 +42,9 @@ _env_PORT="${AGENT_CANVAS_PORT:-}"
 _env_STATE="${AGENT_CANVAS_STATE:-}"
 _env_VLLM_URL="${VLLM_BASE_URL:-}"
 _env_VLLM_KEY="${VLLM_API_KEY:-}"
+_env_PUBLIC="${CANVAS_PUBLIC:-}"
+_env_BIND="${CANVAS_BIND_HOST:-}"
+_env_APIKEY="${LOCAL_BACKEND_API_KEY:-}"
 
 if [[ -f "${SCRIPT_DIR}/.env" ]]; then
   # shellcheck disable=SC1090,SC1091  # .env is git-ignored / runtime
@@ -51,12 +61,17 @@ fi
 [[ -n "$_env_STATE" ]]    && AGENT_CANVAS_STATE="$_env_STATE"
 [[ -n "$_env_VLLM_URL" ]] && VLLM_BASE_URL="$_env_VLLM_URL"
 [[ -n "$_env_VLLM_KEY" ]] && VLLM_API_KEY="$_env_VLLM_KEY"
-unset _env_PORT _env_STATE _env_VLLM_URL _env_VLLM_KEY
+[[ -n "$_env_PUBLIC" ]]   && CANVAS_PUBLIC="$_env_PUBLIC"
+[[ -n "$_env_BIND" ]]     && CANVAS_BIND_HOST="$_env_BIND"
+[[ -n "$_env_APIKEY" ]]   && LOCAL_BACKEND_API_KEY="$_env_APIKEY"
+unset _env_PORT _env_STATE _env_VLLM_URL _env_VLLM_KEY _env_PUBLIC _env_BIND _env_APIKEY
 
 AGENT_CANVAS_PORT="${AGENT_CANVAS_PORT:-8020}"
 AGENT_CANVAS_STATE="${AGENT_CANVAS_STATE:-${SCRIPT_DIR}/openhands-state}"
 VLLM_BASE_URL="${VLLM_BASE_URL:-http://localhost:8000/v1}"
 VLLM_API_KEY="${VLLM_API_KEY:-local-dgx-key}"
+CANVAS_PUBLIC="${CANVAS_PUBLIC:-true}"
+CANVAS_BIND_HOST="${CANVAS_BIND_HOST:-0.0.0.0}"
 
 # Resolve a relative AGENT_CANVAS_STATE against this folder — like docker
 # compose resolves relative volume paths against the compose file — so
@@ -141,6 +156,48 @@ else
   echo
 fi
 
+# --- 3c. mode (public by default) -------------------------------------------
+# Public mode serves the UI on CANVAS_BIND_HOST (all interfaces, so the LAN /
+# Tailscale addresses work) and does NOT inject the API key into the page:
+# every browser pastes LOCAL_BACKEND_API_KEY once, then the launcher remembers
+# it. The launcher exits at startup when --public has no key, hence this check
+# runs before anything is spawned. The same key is what the notifier
+# authenticates with (ntfy_notifier.py reads this env var first).
+#
+# CANVAS_PUBLIC=false restores the old local mode: loopback-only, key
+# auto-generated under ~/.openhands and injected, no login screen.
+CANVAS_ARGS=("--port" "${AGENT_CANVAS_PORT}")
+PUBLIC_LC="$(printf '%s' "${CANVAS_PUBLIC}" | tr '[:upper:]' '[:lower:]')"
+LAN_HINT=""
+if [[ "${PUBLIC_LC}" == "off" || "${PUBLIC_LC}" == "false" || "${PUBLIC_LC}" == "0" ]]; then
+  MODE_LINE="local — loopback only, API key auto-injected (no login)"
+else
+  # An empty key makes the launcher exit on its own; the template placeholder
+  # would "work" with a key published in a public repo. Neither is acceptable.
+  if [[ -z "${LOCAL_BACKEND_API_KEY:-}" || "${LOCAL_BACKEND_API_KEY}" == "REPLACE_ME" ]]; then
+    echo "ERROR: public mode needs a real LOCAL_BACKEND_API_KEY — it is the key you" >&2
+    echo "       paste in the browser, and currently it is '${LOCAL_BACKEND_API_KEY:-<empty>}'." >&2
+    echo "  Fix it in ${SCRIPT_DIR}/.env, e.g.:" >&2
+    echo "    node -e 'console.log(\"LOCAL_BACKEND_API_KEY=\"+require(\"crypto\").randomBytes(32).toString(\"base64url\"))' >> ${SCRIPT_DIR}/.env" >&2
+    echo "  (./install.sh does this when it creates .env), or run loopback-only" >&2
+    echo "  with no login:  CANVAS_PUBLIC=false $0" >&2
+    exit 1
+  fi
+  CANVAS_ARGS=("--host" "${CANVAS_BIND_HOST}" "${CANVAS_ARGS[@]}" "--public")
+  # Show the addresses the UI is reachable on, since --host 0.0.0.0 means
+  # "from the LAN / tailnet too" — without this you would only ever see the
+  # localhost line and wonder how to connect from another machine. macOS
+  # reports addresses in ifconfig field 2, Linux in ip field 4 (with a /prefix).
+  LAN_HINT="also on: $(
+    { ifconfig -a 2>/dev/null | awk '/inet [0-9]/ {print $2}';
+      ip -o -4 addr show 2>/dev/null | awk '{print $4}'; } \
+      | sed 's|/.*||' | grep -vE '^(127\.|169\.254\.)' | sort -u | head -4 \
+      | awk -v p="${AGENT_CANVAS_PORT}" '{printf "http://%s:%s ", $1, p}'
+  )"
+  [[ "${LAN_HINT}" == "also on: " ]] && LAN_HINT=""
+  MODE_LINE="public on ${CANVAS_BIND_HOST} — paste the API key in the browser (once per browser)"
+fi
+
 # --- 4. ntfy notifications --------------------------------------------------
 # Optionally start the ntfy push server (../ntfy, if Docker is available) and
 # the notifier daemon (ntfy_notifier.py) so conversation status changes are
@@ -216,16 +273,14 @@ export UV_CONSTRAINT="${UV_CONSTRAINT:-${SCRIPT_DIR}/uv-constraints.txt}"
 # ingress port, so if they collide on your machine (a second Canvas stack, or a
 # sandbox whose own Agent Canvas occupies them) set OH_CANVAS_SAFE_BACKEND_PORT
 # / OH_CANVAS_SAFE_AUTOMATION_PORT in .env or on the command line.
+
 echo
 echo "Agent Canvas (native) : http://localhost:${AGENT_CANVAS_PORT}"
+[[ -n "${LAN_HINT:-}" ]] && echo "                        ${LAN_HINT}"
+echo "mode                  : ${MODE_LINE}"
 echo "state dir             : ${AGENT_CANVAS_STATE}"
 echo "python (uvx envs)     : ${CANVAS_PYTHON}"
 echo "LLM profile (UI)      : Settings > LLM — provider OpenAI-compatible, base URL ${VLLM_BASE_URL}"
 echo
 # exec replaces the shell so Ctrl+C / the process lifecycle is clean.
-# --public is deliberately NOT passed: local mode auto-generates the API key
-# and injects it into the UI (no login). For a network-exposed stack, switch
-# to:  exec agent-canvas --port "${AGENT_CANVAS_PORT}" --public
-# (requires LOCAL_BACKEND_API_KEY; users then paste the key in the browser).
-exec agent-canvas \
-  --port "${AGENT_CANVAS_PORT}"
+exec agent-canvas "${CANVAS_ARGS[@]}"

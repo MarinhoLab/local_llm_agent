@@ -10,12 +10,14 @@
 # Steps:
 #   1. verify prerequisites: Node.js >= 22.12, npm, uv (the agent-server and
 #      automation backend run via `uvx`, so `uv` must be on PATH);
-#   2. npm install -g @openhands/agent-canvas@latest (safe to re-run: it
+#   2. ensure the pinned Python (3.14) and tmux are installed — via Homebrew
+#      when it is available;
+#   3. npm install -g @openhands/agent-canvas@latest (safe to re-run: it
 #      upgrades), then verify the agent-canvas on PATH is that latest version;
-#   3. if the npm global prefix is not writable, fall back to a per-user
+#   4. if the npm global prefix is not writable, fall back to a per-user
 #      prefix (~/.npm-global) so the install succeeds without sudo;
-#   4. create the persistent state dir;
-#   5. create .env from example.env if it does not already exist, generating a
+#   5. create the persistent state dir;
+#   6. create .env from example.env if it does not already exist, generating a
 #      random NTFY_TOPIC (the topic is the credential on an unauthenticated
 #      ntfy server — see ntfy/README.md).
 #
@@ -24,6 +26,11 @@
 set -uo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+# The Python the launcher's uvx environments must use. The agent-server does
+# not build on 3.15, and without a request uv takes the newest python3 it can
+# find, so the version is pinned here and exported by run.sh via UV_PYTHON.
+PYTHON_VERSION="3.14"
 
 # --- 1. prerequisites -------------------------------------------------------
 need() {
@@ -47,7 +54,37 @@ echo "node $(node --version) OK"
 echo "npm  $(npm --version) OK"
 echo "uv   $(uv --version) OK"
 
-# --- 2/3. install or upgrade the npm package --------------------------------
+# --- 2. python 3.14 and tmux ------------------------------------------------
+# uv takes the newest python3 it can find when nothing is requested, so a newer
+# Homebrew Python on the machine silently becomes the interpreter of the
+# agent-server's environment. Install the pinned formula and let uv find it.
+if command -v brew >/dev/null 2>&1; then
+  if ! uv python find "${PYTHON_VERSION}" >/dev/null 2>&1; then
+    echo "installing python@${PYTHON_VERSION} (the version the stack is pinned to)..."
+    brew install "python@${PYTHON_VERSION}" || echo "WARNING: brew install python@${PYTHON_VERSION} failed." >&2
+  fi
+  if uv python find "${PYTHON_VERSION}" >/dev/null 2>&1; then
+    echo "python ${PYTHON_VERSION} OK ($(uv python find "${PYTHON_VERSION}"))"
+  else
+    echo "ERROR: no Python ${PYTHON_VERSION} for uv to use." >&2
+    echo "  brew install python@${PYTHON_VERSION}    (or: uv python install ${PYTHON_VERSION})" >&2
+    exit 1
+  fi
+  # tmux backs the agents' terminals; without it the SDK falls back to a
+  # subprocess-based terminal and warns on every conversation.
+  if command -v tmux >/dev/null 2>&1; then
+    echo "tmux $(tmux -V | awk '{print $2}') OK"
+  else
+    echo "installing tmux (agents use it for terminals)..."
+    brew install tmux || echo "WARNING: brew install tmux failed — agents will use the subprocess terminal." >&2
+  fi
+else
+  echo "WARNING: brew not found — check Python ${PYTHON_VERSION} and tmux yourself:" >&2
+  echo "  uv python find ${PYTHON_VERSION}   (or: uv python install ${PYTHON_VERSION})" >&2
+  echo "  command -v tmux" >&2
+fi
+
+# --- 3/4. install or upgrade the npm package -------------------------------
 # A global npm install needs a writable prefix. On managed machines (and in
 # some sandboxes) the system prefix (e.g. /usr/local/lib/node_modules) is not
 # writable by the current user. Detect that and fall back to a per-user prefix
@@ -93,7 +130,7 @@ if [[ -n "${LATEST_CANVAS}" && "${INSTALLED_CANVAS}" != "${LATEST_CANVAS}" ]]; t
   exit 1
 fi
 
-# --- 4. persistent state dir -------------------------------------------------
+# --- 5. persistent state dir -------------------------------------------------
 # Native mode has no /projects volume: when you create a conversation you pick
 # a host path to work in (the launcher has no PROJECTS_DIR setting). So install
 # only needs the state dir, where agent-server keeps per-conversation runtime
@@ -111,7 +148,7 @@ esac
 mkdir -p "${NATIVE_STATE_DIR}"
 echo "state dir   : ${NATIVE_STATE_DIR}"
 
-# --- 5. .env template --------------------------------------------------------
+# --- 6. .env template --------------------------------------------------------
 if [[ -f "${SCRIPT_DIR}/.env" ]]; then
   echo ".env already exists — left untouched"
 else

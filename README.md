@@ -102,8 +102,11 @@ the local filesystem (there is no container sandbox).
 | `VLLM_BASE_URL`      | `http://localhost:8000/v1` | Endpoint `run.sh` checks before launch (the value for the LLM profile)   |
 | `VLLM_API_KEY`       | `local-dgx-key`        | API key for the vLLM preflight check                                       |
 
-Needs Node.js ≥ 22.12 and `uv`. Ports, overrides, and troubleshooting are
-documented in [`agent_canvas_native/README.md`](agent_canvas_native/README.md).
+Needs Node.js ≥ 22.12, `uv`, **Python 3.14** (installed via
+`brew install python@3.14`; `run.sh` pins it with `UV_PYTHON` because the
+agent-server does not build on 3.15) and `tmux` for the agents' terminals.
+Ports, overrides, and troubleshooting are documented in
+[`agent_canvas_native/README.md`](agent_canvas_native/README.md).
 
 ## `ntfy/`
 

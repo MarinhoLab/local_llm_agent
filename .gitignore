@@ -7,7 +7,7 @@ agent_canvas_native/openhands-state/
 # ntfy server config & data (per-PC push server, see ntfy/)
 ntfy/.env
 
-# Python (ntfy_notifier.py runs with the system interpreter)
+# Python (ntfy_notifier.py runs with the interpreter pinned in run.sh)
 __pycache__/
 
 # Long-task logs and transient artifacts

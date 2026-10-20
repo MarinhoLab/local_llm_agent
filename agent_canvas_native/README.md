@@ -13,8 +13,9 @@ This is the npm-based install path documented at
 
 ```
 agent_canvas_native/
-├── install.sh     # one-time setup: check prereqs, install the npm package,
-│                  #   make the state dir, seed .env (with a random NTFY_TOPIC)
+├── install.sh     # one-time setup: check prereqs (incl. Python 3.14 + tmux),
+│                  #   install the npm package, make the state dir,
+│                  #   seed .env (with a random NTFY_TOPIC)
 ├── run.sh         # start the stack (UI + agent-server + automation + ingress)
 ├── ntfy_notifier.py  # optional push-notification daemon (started by run.sh)
 ├── example.env    # configuration template (copied to .env by install.sh)
@@ -29,15 +30,26 @@ agent_canvas_native/
 | [Node.js](https://nodejs.org/en/download) | 22.12 | `node --version` |
 | npm | — | `npm --version` (ships with Node) |
 | [uv](https://docs.astral.sh/uv/) | — | `uv --version` (the agent-server and automation backend run via `uvx`) |
+| Python | **3.14** | `uv python find 3.14` (`brew install python@3.14`) |
+| [tmux](https://github.com/tmux/tmux) | — | `tmux -V` (`brew install tmux`) — the agents' terminals |
 | macOS / Linux | — | `uname -a` |
 
 ```bash
-node --version   # needs v22.12 or newer
-uv --version     # e.g. uv 0.12.x
+node --version    # needs v22.12 or newer
+uv --version      # e.g. uv 0.12.x
+uv python find 3.14
+tmux -V
 ```
 
 `uv` is what the launcher uses to run the Python agent-server and automation
 backend (the npm package bundles the UI + ingress only).
+
+**Python is pinned to 3.14.** The launcher pins only its `openhands-*`
+packages, so the interpreter would otherwise float to whatever `python3` is
+newest on the machine, and the agent-server does not build on 3.15. `run.sh`
+exports `UV_PYTHON=3.14` (override it in `.env` if you must) and stops with an
+error when no 3.14 interpreter is installed. Without `tmux` the SDK still works
+but falls back to a subprocess-based terminal and warns on every conversation.
 
 ## Quick start
 
@@ -234,6 +246,8 @@ prefix still needs a reachable URL for tap-to-open.
 | UI loads but the model "doesn't work" | The LLM profile isn't set or the vLLM tunnel is down. Set Settings → LLM and confirm `curl http://localhost:8000/v1/models` works. |
 | Every conversation errors on its first LLM call (`cannot import name '...' from 'mcp.types'` or a similar `ImportError` in `openhands-state/logs/agent-canvas.<date>.log`) | A floating dependency of the agent-server released a breaking version. `run.sh` exports `UV_CONSTRAINT=uv-constraints.txt` to hold such releases back; add the offending package there (e.g. `litellm<1.106`) and rerun `run.sh`. |
 | `uvx` not found when launching | `uv` isn't on `PATH`. Install it and open a new terminal. |
+| `no Python 3.14 interpreter found for uv` | The pinned interpreter isn't installed: `brew install python@3.14` (or `uv python install 3.14`), then confirm with `uv python find 3.14`. If a newer Homebrew Python (3.15) got picked up instead, `run.sh` exports `UV_PYTHON=3.14` to stop that — the agent-server's environment does not build on 3.15. |
+| `tmux is not installed. Falling back to subprocess-based terminal` | Harmless but less stable terminals for agents. Install it: `brew install tmux` (macOS) / `apt-get install tmux` (Linux), then restart the stack. |
 | Notifier: `waiting for agent-server session API key...` loops | The Canvas hasn't started yet or the key file was removed. Wait for the stack to come up, or set `LOCAL_BACKEND_API_KEY` in `.env`. Log: `openhands-state/logs/ntfy.log`. |
 | Notifier: `WARN: ntfy publish failed HTTP 401/403` | Only when you enabled account auth (`NTFY_AUTH_FILE`): `NTFY_AUTH_TOKEN` missing/wrong, or the token lacks write access. Re-create it (`../ntfy/README.md` → *Authentication*). |
 | ntfy container exits and logs show the CLI help | The `serve` subcommand is missing. `compose.yml` sets `command: serve`; if you ran the image directly, add `serve` after the image name. |

@@ -122,6 +122,14 @@ Three self-contained stacks plus a notification sidecar:
   the V1 REST API (`POST /api/v1/settings` with
   `agent_settings_diff.mcp_config`, which is applied wholesale — send the full
   desired map). Keep any MCP API key out of git.
+- **the retired client runtime = Python 3.14 + tmux.** The launcher runs retired-server
+  and the automation backend through `uv tool uvx` and pins only the
+  `the retired client-*` packages, so the interpreter floats to whatever `python3` is
+  newest on the machine. On 3.15 that environment fails to build, so `run.sh`
+  exports `UV_PYTHON=3.14` (and `install.sh` installs `python@3.14` via
+  Homebrew). `tmux` is what the SDK uses for agent terminals — without it every
+  conversation logs "tmux is not installed. Falling back to subprocess-based
+  terminal". Both are checked by `install.sh`/`run.sh`.
 
 ## Common commands
 

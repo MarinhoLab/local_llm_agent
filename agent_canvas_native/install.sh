@@ -43,13 +43,6 @@ if ! node -e 'const [maj, min] = process.versions.node.split(".").map(Number); p
   echo "Install a current Node.js (e.g. via https://nodejs.org or nvm) and re-run." >&2
   exit 1
 fi
-# run.sh publishes the UI on the local addresses by default through
-# bind_guard.py, which is stdlib Python. Not a hard prerequisite: LAN_BIND=off
-# runs the launcher directly.
-if ! command -v python3 >/dev/null 2>&1; then
-  echo "WARNING: 'python3' not found in PATH. The default LAN_BIND=on needs it," >&2
-  echo "         so run.sh will fail until you install Python 3 or set LAN_BIND=off." >&2
-fi
 echo "node $(node --version) OK"
 echo "npm  $(npm --version) OK"
 echo "uv   $(uv --version) OK"

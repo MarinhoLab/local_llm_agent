@@ -6,7 +6,7 @@ set -euo pipefail
 # ~22 GB). Composes the `vllm serve` command from the env defaults set in
 # this stack's Dockerfile; everything is overridable via .env / compose.
 
-SPECULATIVE_CONFIG='{"method":"'"${SPEC_METHOD}"'","num_speculative_tokens":'"${NUM_SPEC_TOKENS}"'}'
+SPECULATIVE_CONFIG='{"method":"mtp","num_speculative_tokens":'"${NUM_SPEC_TOKENS}"',"max_model_len":'"${MAX_MODEL_LEN}"'}'
 
 echo "[entrypoint] NVFP4 stack: MODEL_NAME=${MODEL_NAME}  gpu_mem_util=${GPU_MEMORY_UTILIZATION}" >&2
 

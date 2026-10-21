@@ -66,9 +66,13 @@ if command -v brew >/dev/null 2>&1; then
   if uv python find "${PYTHON_VERSION}" >/dev/null 2>&1; then
     echo "python ${PYTHON_VERSION} OK ($(uv python find "${PYTHON_VERSION}"))"
   else
-    echo "ERROR: no Python ${PYTHON_VERSION} for uv to use." >&2
-    echo "  brew install python@${PYTHON_VERSION}    (or: uv python install ${PYTHON_VERSION})" >&2
-    exit 1
+    if uv python find >/dev/null 2>&1; then
+      echo "WARNING: Python ${PYTHON_VERSION} not found; run.sh will fall back to $(uv python find)." >&2
+    else
+      echo "ERROR: no Python for uv to use." >&2
+      echo "  brew install python@${PYTHON_VERSION}    (or: uv python install ${PYTHON_VERSION})" >&2
+      exit 1
+    fi
   fi
   # tmux backs the agents' terminals; without it the SDK falls back to a
   # subprocess-based terminal and warns on every conversation.

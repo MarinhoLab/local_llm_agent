@@ -108,12 +108,26 @@ if ! command -v uv >/dev/null 2>&1; then
   echo "  Install it:  brew install uv   (or: curl -LsSf https://astral.sh/uv/install.sh | sh)" >&2
   exit 1
 fi
-export UV_PYTHON="${UV_PYTHON:-3.14}"
-if ! CANVAS_PYTHON="$(uv python find "${UV_PYTHON}" 2>/dev/null)"; then
-  echo "ERROR: no Python ${UV_PYTHON} interpreter found for uv (UV_PYTHON=${UV_PYTHON})." >&2
-  echo "  Install it:  brew install python@${UV_PYTHON}    (or: uv python install ${UV_PYTHON})" >&2
-  echo "  Check it:    uv python find ${UV_PYTHON}" >&2
-  exit 1
+if [ -n "${UV_PYTHON:-}" ]; then
+  # Explicit request: honor it strictly.
+  if ! CANVAS_PYTHON="$(uv python find "${UV_PYTHON}" 2>/dev/null)"; then
+    echo "ERROR: no Python ${UV_PYTHON} interpreter found for uv (UV_PYTHON=${UV_PYTHON})." >&2
+    echo "  Install it:  brew install python@${UV_PYTHON}    (or: uv python install ${UV_PYTHON})" >&2
+    echo "  Check it:    uv python find ${UV_PYTHON}" >&2
+    exit 1
+  fi
+elif CANVAS_PYTHON="$(uv python find 3.14 2>/dev/null)"; then
+  export UV_PYTHON=3.14
+else
+  # No 3.14 (e.g. Ubuntu 24.04): fall back to uv's default interpreter.
+  if ! CANVAS_PYTHON="$(uv python find 2>/dev/null)"; then
+    echo "ERROR: no Python interpreter found for uv." >&2
+    echo "  Install one:  uv python install 3.14   (or your distro's python3)" >&2
+    exit 1
+  fi
+  export UV_PYTHON="${CANVAS_PYTHON}"
+  echo "WARNING: Python 3.14 not found; falling back to ${CANVAS_PYTHON}." >&2
+  echo "         (If the agent-server fails to build, run: uv python install 3.14)" >&2
 fi
 # The agent-server's terminal needs tmux; without it the SDK falls back to a
 # subprocess-based terminal and warns on every conversation start.

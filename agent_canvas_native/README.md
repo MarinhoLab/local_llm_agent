@@ -48,7 +48,7 @@ backend (the npm package bundles the UI + ingress only).
 packages, so the interpreter would otherwise float to whatever `python3` is
 newest on the machine, and the agent-server does not build on 3.15. `run.sh`
 exports `UV_PYTHON=3.14` (override it in `.env` if you must) and stops with an
-error when no 3.14 interpreter is installed. Without `tmux` the SDK still works
+error only if an explicit `UV_PYTHON` can't be found; when 3.14 is missing (e.g. Ubuntu 24.04) it warns and falls back to uv's default interpreter. Without `tmux` the SDK still works
 but falls back to a subprocess-based terminal and warns on every conversation.
 
 ## Quick start

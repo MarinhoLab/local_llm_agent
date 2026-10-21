@@ -1,6 +1,10 @@
 context/
 .env
 
+# Weight/compile caches created inside a DGX stack folder (see each compose.yml)
+dgx_spark_host/*/*cache/
+dgx_spark_host/*/.triton/
+
 
 # ntfy server config & data (per-PC push server, see ntfy/)
 ntfy/.env

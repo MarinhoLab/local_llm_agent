@@ -1,0 +1,55 @@
+# compose.yml — nvidia/Qwen3.8-Flash-Next-FP4-Local on the DGX Spark.
+#
+# Third DGX-side stack, alongside the two 27B siblings (../qwen38-27b-nvfp4,
+# ../qwen38-27b-bf16). Fully isolated: it runs NVIDIA's community B12X vLLM
+# image rather than vllm/vllm-openai, because upstream vLLM does not yet
+# support this checkpoint's compressed NVFP4 scale factors.
+# Recipe: https://huggingface.co/nvidia/Qwen3.8-Flash-Next-FP4-Local
+#
+# First run downloads ~96 GiB of weights into ./hf-cache.
+#
+# Port 8000 is shared with the other stacks — run only ONE of the three DGX
+# stacks at a time on the Spark.
+
+services:
+  qwen38-flash-next-fp4:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: dgx-qwen38-flash-next-fp4
+
+    # Requires NVIDIA Container Toolkit on the DGX Spark host.
+    gpus: all
+    ipc: host
+    shm_size: 16g
+    # The B12X loader reads the PLE n-gram table through io_uring.
+    ulimits:
+      memlock: -1
+      stack: 67108864
+    security_opt:
+      - seccomp=unconfined
+      - apparmor=unconfined
+
+    # Pass this stack's optional .env into the container, so overrides of the
+    # Dockerfile ENV defaults (GPU_MEMORY_UTILIZATION, MAX_NUM_SEQS, MTP,
+    # HF_TOKEN, ...) actually reach entrypoint.sh.
+    env_file:
+      - path: .env
+        required: false
+
+    environment:
+      - PYTHONUNBUFFERED=1
+
+    ports:
+      - "8000:8000"
+
+    volumes:
+      # Weights (HF cache) plus the compile caches the B12X image reuses
+      # across restarts so a reload does not recompile from scratch.
+      - ${HF_CACHE:-./hf-cache}:/root/.cache/huggingface
+      - ${VLLM_CACHE:-./vllm-cache}:/root/.cache/vllm
+      - ${FLASHINFER_CACHE:-./flashinfer-cache}:/root/.cache/flashinfer
+      - ${TRITON_CACHE:-./triton-cache}:/root/.triton
+      - ${B12X_CACHE:-./b12x-cache}:/root/.cache/b12x
+
+    restart: unless-stopped

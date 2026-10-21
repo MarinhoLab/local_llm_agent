@@ -12,7 +12,8 @@ time):
 
 - **`qwen38-27b-nvfp4`** — the current NVFP4 quantization from NVIDIA (default),
 - **`qwen38-27b-bf16`** — the original BF16 Qwen checkpoint, and
-- **`flash_ultrafast`** — the [Qwen3.8 Flash DGX UltraFast v16b recipe](https://github.com/dime-online/qwen3.8-Flash-DGX-UltraFast).
+- **`qwen38-flash-next-fp4`** — NVIDIA's [Qwen3.8-Flash-Next-FP4-Local](https://huggingface.co/nvidia/Qwen3.8-Flash-Next-FP4-Local)
+  quantization of the 125B MoE `Qwen3.8-Flash-Next`.
 
 See [`dgx_spark_host/`](#dgx_spark_host) → *The three stacks*.
 
@@ -20,10 +21,7 @@ See [`dgx_spark_host/`](#dgx_spark_host) → *The three stacks*.
 
 Host a Qwen model via vLLM on the DGX Spark machine — one self-contained stack
 per model, in its own folder (own image, compose, entrypoint and defaults; they
-share no code or parameters). The two 27B stacks build their image from a
-`Dockerfile`; `flash_ultrafast/` pins a prebuilt patched image produced by its
-`setup-upstream.sh`, so it has no `Dockerfile`. All bind port 8000; run only ONE
-at a time.
+share no code or parameters). All bind port 8000; run only ONE at a time.
 
 ### The three stacks
 
@@ -31,7 +29,7 @@ at a time.
 |---|---|---|---|
 | `qwen38-27b-nvfp4/` | `nvidia/Qwen3.8-27B-NVFP4` (NVFP4+FP8, ~22 GB) — the current default | `cd dgx_spark_host/qwen38-27b-nvfp4 && docker compose up --build` | `qwen-local` |
 | `qwen38-27b-bf16/` | `Qwen/Qwen3.8-27B` (official BF16, ~55 GB) | `cd dgx_spark_host/qwen38-27b-bf16 && docker compose up --build` | `qwen-local` |
-| `flash_ultrafast/` | Qwen3.8 Flash DGX UltraFast v16b recipe | `cd dgx_spark_host/flash_ultrafast && ./setup-upstream.sh && docker compose up --build` | `qwen-local` |
+| `qwen38-flash-next-fp4/` | `nvidia/Qwen3.8-Flash-Next-FP4-Local` (QAD NVFP4 of the 125B MoE, ~96 GiB) | `cd dgx_spark_host/qwen38-flash-next-fp4 && docker compose up --build` | `qwen-local` |
 
 Run the current default:
 
@@ -44,38 +42,35 @@ The API is available at `http://localhost:8000/v1`. For shared networks, bind
 to `127.0.0.1` in the stack's `compose.yml`.
 
 Each stack's `README.md` documents its own environment variables (defaults live
-in its `Dockerfile` for the two 27B stacks, and in `compose.yml`/`entrypoint.sh`
-for `flash_ultrafast`; override via `.env` or `compose.yml`) and tuning
-notes (DGX Spark, GB10, 128 GB unified memory, LLM-only box). Both 27B
-checkpoints ship a 1-layer MTP head, so MTP speculative decoding is on by
-default for them; both are native vision-language models with image inputs
-enabled via `--limit-mm-per-prompt '{"image":4}'`.
+in its `Dockerfile`; override via `.env` or `compose.yml`) and tuning
+notes (DGX Spark, GB10, 128 GB unified memory, LLM-only box). All three
+checkpoints are native vision-language models and ship an MTP head, so MTP
+speculative decoding is on by default in every stack. The two 27B stacks cap
+image inputs with `--limit-mm-per-prompt '{"image":4}'`; the Flash Next stack
+follows NVIDIA's own serve command, which leaves that cap out.
 
-### `flash_ultrafast/` — the Qwen3.8 Flash DGX UltraFast option
+### `qwen38-flash-next-fp4/` — the Qwen3.8 Flash Next option
 
-- **What it is**: the [dime-online/qwen3.8-Flash-DGX-UltraFast](https://github.com/dime-online/qwen3.8-Flash-DGX-UltraFast)
-  **v16b** recipe — a patched vLLM image (CUDA 13.0, custom low-latency
-  GEMM/Mamba/PLE/MTP kernels) serving the W4A16/FP8 AutoRound-hybrid
-  `Qwen3.8-Flash-Next` checkpoint. The PLE table is memory-mapped from
-  storage, which leaves room for a 16 GB KV pool at the full 262,144-token
-  context. A dense T80 MTP drafter (depth 3, block
-  rejection) provides the speed — upstream reports **74 tok/s single stream**
-  and **212 tok/s aggregate at 8 streams** on one GB10 (re-verify on your
-  hardware).
-- **Why fully isolated**: it uses a different (patched) image, extra
-  downloads (~130 GB), and a drafter build — so it has its own folder with its
-  own compose/entrypoint/pinned env, rather than sharing parameters with the
-  two 27B stacks. It is served on the same port 8000 with the same alias,
-  **`qwen-local`** as the other two — clients need no changes.
-- **One-time setup** (on the Spark): `./dgx_spark_host/flash_ultrafast/setup-upstream.sh`
-  — clones the upstream Apache-2.0 repo, downloads the pinned checkpoint +
-  PLE table, builds the patched image and the T80 drafter, and installs the
-  draft vocabulary.
-- **Run**: `cd dgx_spark_host/flash_ultrafast && docker compose -f compose.yml up --build`.
+- **What it is**: [`nvidia/Qwen3.8-Flash-Next-FP4-Local`](https://huggingface.co/nvidia/Qwen3.8-Flash-Next-FP4-Local)
+  — NVIDIA Model Optimizer's QAD (quantization-aware distillation) NVFP4/MXFP8
+  build of `Qwen/Qwen3.8-Flash-Next`, a 125B multimodal MoE with 6B active
+  parameters plus a 51B n-gram (PLE) embedding table and a 4B MTP module.
+  ~96 GiB on disk; NVIDIA validated it on the DGX Spark.
+- **Why fully isolated**: it needs a different vLLM image (the community B12X
+  container NVIDIA prescribes, not `vllm/vllm-openai:nightly`), a different
+  loader/quantization path (`--load-format b12x --quantization modelopt_mixed`)
+  and its own `VLLM_*`/`B12X_*` environment — so it has its own folder rather
+  than sharing parameters with the two 27B stacks. It is served on the same
+  port 8000 with the same alias, **`qwen-local`** as the other two — clients
+  need no changes.
+- **Requirements**: accept the NVIDIA Open Model Agreement on the model page
+  and put `HF_TOKEN` in this stack's `.env`; ~96 GiB of free disk for the
+  weights. The first start also spends a long while on weight load + compile.
+- **Run**: `cd dgx_spark_host/qwen38-flash-next-fp4 && docker compose -f compose.yml up --build`.
   Stop the other stacks first — the three stacks share port 8000.
 
-Full details, provenance, the upstream's claims, and the overridable
-parameters are in [`dgx_spark_host/flash_ultrafast/README.md`](dgx_spark_host/flash_ultrafast/README.md).
+Full details, provenance, and the overridable parameters are in
+[`dgx_spark_host/qwen38-flash-next-fp4/README.md`](dgx_spark_host/qwen38-flash-next-fp4/README.md).
 
 ## `retired-stack/`
 

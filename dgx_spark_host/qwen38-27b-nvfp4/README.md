@@ -10,7 +10,8 @@ defaults) and all bind port 8000 — run only ONE at a time:
 
 - `../qwen38-27b-nvfp4/` — this stack (NVFP4, ~22 GB)
 - `../qwen38-27b-bf16/` — the official `Qwen/Qwen3.8-27B` in BF16 (~55 GB)
-- `../flash_ultrafast/` — the Qwen3.8 Flash DGX UltraFast v16b recipe
+- `../qwen38-flash-next-fp4/` — `nvidia/Qwen3.8-Flash-Next-FP4-Local`, the 125B
+  MoE Flash Next checkpoint (~96 GiB)
 
 ## Run
 

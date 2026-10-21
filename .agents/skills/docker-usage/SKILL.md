@@ -22,7 +22,7 @@ Agent Canvas client runs **natively** (no Docker); see
 
 | Stack | Directory | Machine | What it runs | Command |
 |---|---|---|---|---|
-| vLLM server | `dgx_spark_host/qwen38-27b-nvfp4/` (default stack; siblings: `qwen38-27b-bf16/`, `flash_ultrafast/`) | NVIDIA DGX Spark (aarch64, GPU) | `nvidia/Qwen3.8-27B-NVFP4` served at `:8000/v1` | `docker compose -f compose.yml up --build` (from the stack folder) |
+| vLLM server | `dgx_spark_host/qwen38-27b-nvfp4/` (default stack; siblings: `qwen38-27b-bf16/`, `qwen38-flash-next-fp4/`) | NVIDIA DGX Spark (aarch64, GPU) | `nvidia/Qwen3.8-27B-NVFP4` served at `:8000/v1` | `docker compose -f compose.yml up --build` (from the stack folder) |
 
 The macOS-side clients reach the model over an **SSH tunnel** (see below).
 There is no Docker compose on the Mac.
@@ -39,7 +39,8 @@ docker compose -f compose.yml up --build
 ```
 
 (Siblings: `qwen38-27b-bf16/` for the official BF16 checkpoint, and
-`flash_ultrafast/` for the UltraFast recipe — see `dgx_spark_host/README.md`.)
+`qwen38-flash-next-fp4/` for the 125B Flash Next checkpoint — see
+`dgx_spark_host/README.md`.)
 
 The API is available at `http://localhost:8000/v1` on the Spark.
 
@@ -69,19 +70,20 @@ deliberate:
   **NVIDIA Container Toolkit** on the Spark. If the container starts but the
   log shows no GPU / vLLM OOMs, the toolkit is missing or not on the PATH.
 - **`HF_CACHE:-./hf-cache:/root/.cache/huggingface`** persists downloaded weights
-  across runs. Do not delete it or the next start re-downloads ~22 GB.
-- In the two 27B stacks, all runtime defaults live as `ENV` in the stack's
+  across runs. Do not delete it or the next start re-downloads ~22 GB (~96 GiB
+  in the Flash Next stack).
+- In every stack, all runtime defaults live as `ENV` in the stack's
   `Dockerfile`; its `entrypoint.sh` composes the `vllm serve` command from
   those variables, and the stack's optional `.env` reaches the container via
   `env_file`. Keep that stack's README env-var table in sync when changing
-  defaults. `flash_ultrafast/` instead runs a prebuilt patched image with its
-  pinned values in `compose.yml`/`entrypoint.sh`.
+  defaults.
 
 ## Everyday container operations
 
 ```bash
 # vLLM server (DGX Spark) — default stack; for the others use
-# qwen38-27b-bf16/ (dgx-qwen-bf16-vllm) or flash_ultrafast/ (dgx-qwen38-flash)
+# qwen38-27b-bf16/ (dgx-qwen-bf16-vllm) or
+# qwen38-flash-next-fp4/ (dgx-qwen38-flash-next-fp4)
 docker compose -f dgx_spark_host/qwen38-27b-nvfp4/compose.yml logs -f --tail=200
 docker compose -f dgx_spark_host/qwen38-27b-nvfp4/compose.yml ps
 docker compose -f dgx_spark_host/qwen38-27b-nvfp4/compose.yml down      # stop, keep volumes

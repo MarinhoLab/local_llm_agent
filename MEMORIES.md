@@ -779,3 +779,68 @@ and `0` emit no `--enable-prompt-tokens-details`, `1` adds exactly that
 argument; `docker compose config` renders `0` by default and `1` from `.env`.
 Earlier repro: openhands-sdk 1.49.x works when the usage carries no
 `prompt_tokens_details`.
+
+### 2026-10-21 — Removed `flash_ultrafast`; replaced by `qwen38-flash-next-fp4`
+
+`dgx_spark_host/flash_ultrafast/` (the dime-online Qwen3.8 Flash DGX UltraFast
+v16b recipe) was **removed** and replaced by a third stack serving
+**[`nvidia/Qwen3.8-Flash-Next-FP4-Local`](https://huggingface.co/nvidia/Qwen3.8-Flash-Next-FP4-Local)**
+— NVIDIA's official QAD (quantization-aware distillation) NVFP4/MXFP8
+quantization of `Qwen/Qwen3.8-Flash-Next` (125B multimodal MoE, 6B active,
++51B n-gram/PLE table, +4B MTP; ~96 GiB on disk), released 2026-10-05 and
+validated by NVIDIA on the DGX Spark.
+
+**Why replace rather than keep both:** both stacks serve the *same base model*
+(`Qwen3.8-Flash-Next`) on the same port under the same alias, so the UltraFast
+recipe was a duplicate serving path rather than a distinct model. The official
+checkpoint also drops what made that stack heavy and fragile: no upstream clone,
+no ~130 GB of pinned third-party downloads, no locally built T80 drafter and
+draft-vocab install, and no workarounds for upstream build bugs —
+`setup-upstream.sh` and its whole one-time prep step are gone, so bring-up is a
+plain `docker compose up` like the 27B stacks. NVIDIA's model card is now the
+source of truth for the pinned values instead of a community repo's
+`recipe/config/v16b`.
+
+**What was added:** `dgx_spark_host/qwen38-flash-next-fp4/` — a fully isolated
+stack in the repo's standard shape (`Dockerfile` with all `ENV` defaults,
+`entrypoint.sh`, `compose.yml`, `README.md`), which the UltraFast stack had
+broken by pinning a prebuilt image and keeping its defaults in compose. Base
+image is the community B12X container NVIDIA prescribes,
+`eugr/spark-vllm-b12x:latest` (upstream vLLM cannot yet read the checkpoint's
+compressed NVFP4 scale factors). `entrypoint.sh` mirrors the model card's DGX
+Spark serve command — `--load-format b12x --quantization modelopt_mixed`, the
+`b12x` GDN/linear/MoE backends, `--mamba-cache-mode align`, `--block-size 16`,
+`--kv-cache-dtype fp8`, `--max-num-seqs 8`, `--max-num-batched-tokens 4096`, MTP
+depth 4, `--tool-call-parser qwen3_xml`, `--reasoning-parser qwen3`,
+`--no-enable-flashinfer-autotune` and
+`--compilation-config '{"pass_config":{"fuse_act_quant":true}}'` — plus the
+card's `VLLM_*`/`B12X_*` environment, where `VLLM_PLE_TABLE_MEMORY=disk` with
+`B12X_DISK_BACKEND=io_uring` keeps the PLE table in NVMe (`CUTE_DSL_ARCH=sm_121a`
+for GB10). Serving identity is unchanged: alias **`qwen-local`** on port
+**8000**, so the macOS clients still need no changes when switching stacks.
+
+**Consequences for existing Spark deployments:** remove or archive
+`dgx_spark_host/flash_ultrafast/` on the Spark (run its
+`docker compose -f .../flash_ultrafast/compose.yml down` before switching — the
+compose project and the `dgx-qwen38-flash` container are gone). The ~130 GB of
+assets under `~/models` and `~/.cache/qwen38-v16b` are no longer referenced and
+can be reclaimed. The new stack downloads ~96 GiB into its own `hf-cache` on
+first start and needs the NVIDIA Open Model Agreement accepted plus `HF_TOKEN`
+in its `.env`.
+
+**Docs updated:** top-level `README.md` (option list, stack table, the
+`### qwen38-flash-next-fp4` subsection, and the "defaults live in the
+Dockerfile" / VLM+MTP notes), `AGENTS.md` (overview, stack list, Key tuning
+decisions for model and vLLM image, Common commands, sanity checks,
+conventions), `dgx_spark_host/README.md` (stack table), both 27B siblings'
+"three sibling stacks" lists, `agent_canvas_native/README.md` (model-ID note),
+and the `docker-usage` skill (stack row, bring-up, container names, config
+notes). `.gitignore` now also ignores the per-stack `*cache/` and `.triton/`
+mount directories.
+
+**Verification:** `bash -n` on the new entrypoint; `docker compose config`
+renders the stack (image, environment, mounts, ulimits); stub-`vllm` dry-runs of
+`entrypoint.sh` for the defaults and for `MTP=0`, `PREFIX_CACHE=0` and a `.env`
+override; grep confirms no live reference to `flash_ultrafast` survives outside
+the history entries in this file.
+

@@ -34,7 +34,9 @@ ENV TOOL_PARSER=qwen3_xml
 ENV PREFIX_CACHE=1
 ENV FLASHINFER_AUTOTUNE=0
 ENV MM_ENCODER_TP_MODE=data
-ENV COMPILATION_CONFIG={"pass_config":{"fuse_act_quant":true}}
+# COMPILATION_CONFIG (JSON) is intentionally NOT set via ENV: Dockerfile ENV
+# parsing strips the double quotes. entrypoint.sh supplies the default
+# '{"pass_config":{"fuse_act_quant":true}}'.
 ENV MTP=4
 ENV PLE_TABLE_MEMORY=disk
 ENV DISK_BACKEND=io_uring

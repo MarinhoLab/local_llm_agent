@@ -12,7 +12,8 @@ time):
 
 - **`qwen38-27b-nvfp4`** — the current NVFP4 quantization from NVIDIA (default),
 - **`qwen38-27b-bf16`** — the original BF16 Qwen checkpoint, and
-- **`flash_ultrafast`** — the [Qwen3.8 Flash DGX UltraFast v16b recipe](https://github.com/dime-online/qwen3.8-Flash-DGX-UltraFast).
+- **`qwen38-flash-next-nvfp4`** — NVIDIA's official NVFP4 quant of
+  [`Qwen3.8-Flash-Next`](https://huggingface.co/nvidia/Qwen3.8-Flash-Next-NVFP4).
 
 See [`dgx_spark_host/`](#dgx_spark_host) → *The three stacks*.
 
@@ -20,10 +21,8 @@ See [`dgx_spark_host/`](#dgx_spark_host) → *The three stacks*.
 
 Host a Qwen model via vLLM on the DGX Spark machine — one self-contained stack
 per model, in its own folder (own image, compose, entrypoint and defaults; they
-share no code or parameters). The two 27B stacks build their image from a
-`Dockerfile`; `flash_ultrafast/` pins a prebuilt patched image produced by its
-`setup-upstream.sh`, so it has no `Dockerfile`. All bind port 8000; run only ONE
-at a time.
+share no code or parameters). All three build their image from a `Dockerfile`
+on a stock base and bind port 8000; run only ONE at a time.
 
 ### The three stacks
 
@@ -31,7 +30,7 @@ at a time.
 |---|---|---|---|
 | `qwen38-27b-nvfp4/` | `nvidia/Qwen3.8-27B-NVFP4` (NVFP4+FP8, ~22 GB) — the current default | `cd dgx_spark_host/qwen38-27b-nvfp4 && docker compose up --build` | `qwen-local` |
 | `qwen38-27b-bf16/` | `Qwen/Qwen3.8-27B` (official BF16, ~55 GB) | `cd dgx_spark_host/qwen38-27b-bf16 && docker compose up --build` | `qwen-local` |
-| `flash_ultrafast/` | Qwen3.8 Flash DGX UltraFast v16b recipe | `cd dgx_spark_host/flash_ultrafast && ./setup-upstream.sh && docker compose up --build` | `qwen-local` |
+| `qwen38-flash-next-nvfp4/` | `nvidia/Qwen3.8-Flash-Next-NVFP4` (official NVFP4, ~133 GB) | `cd dgx_spark_host/qwen38-flash-next-nvfp4 && docker compose up --build` | `qwen-local` |
 
 Run the current default:
 
@@ -44,38 +43,32 @@ The API is available at `http://localhost:8000/v1`. For shared networks, bind
 to `127.0.0.1` in the stack's `compose.yml`.
 
 Each stack's `README.md` documents its own environment variables (defaults live
-in its `Dockerfile` for the two 27B stacks, and in `compose.yml`/`entrypoint.sh`
-for `flash_ultrafast`; override via `.env` or `compose.yml`) and tuning
-notes (DGX Spark, GB10, 128 GB unified memory, LLM-only box). Both 27B
+in its `Dockerfile`; override via `.env` or `compose.yml`) and tuning notes
+(DGX Spark, GB10, 128 GB unified memory, LLM-only box). Both 27B
 checkpoints ship a 1-layer MTP head, so MTP speculative decoding is on by
 default for them; both are native vision-language models with image inputs
 enabled via `--limit-mm-per-prompt '{"image":4}'`.
 
-### `flash_ultrafast/` — the Qwen3.8 Flash DGX UltraFast option
+### `qwen38-flash-next-nvfp4/` — the Flash-Next option
 
-- **What it is**: the [dime-online/qwen3.8-Flash-DGX-UltraFast](https://github.com/dime-online/qwen3.8-Flash-DGX-UltraFast)
-  **v16b** recipe — a patched vLLM image (CUDA 13.0, custom low-latency
-  GEMM/Mamba/PLE/MTP kernels) serving the W4A16/FP8 AutoRound-hybrid
-  `Qwen3.8-Flash-Next` checkpoint. The PLE table is memory-mapped from
-  storage, which leaves room for a 16 GB KV pool at the full 262,144-token
-  context. A dense T80 MTP drafter (depth 3, block
-  rejection) provides the speed — upstream reports **74 tok/s single stream**
-  and **212 tok/s aggregate at 8 streams** on one GB10 (re-verify on your
-  hardware).
-- **Why fully isolated**: it uses a different (patched) image, extra
-  downloads (~130 GB), and a drafter build — so it has its own folder with its
-  own compose/entrypoint/pinned env, rather than sharing parameters with the
-  two 27B stacks. It is served on the same port 8000 with the same alias,
-  **`qwen-local`** as the other two — clients need no changes.
-- **One-time setup** (on the Spark): `./dgx_spark_host/flash_ultrafast/setup-upstream.sh`
-  — clones the upstream Apache-2.0 repo, downloads the pinned checkpoint +
-  PLE table, builds the patched image and the T80 drafter, and installs the
-  draft vocabulary.
-- **Run**: `cd dgx_spark_host/flash_ultrafast && docker compose -f compose.yml up --build`.
+- **What it is**: `nvidia/Qwen3.8-Flash-Next-NVFP4` — NVIDIA's official
+  mixed-precision quant of the `Qwen3.8-Flash-Next` MoE (~180B; NVFP4 routed
+  experts, FP8 MTP experts and PLE n-gram table, ~133 GB) — served from a stock
+  `vllm/vllm-openai:nightly`. Published single-Spark numbers cluster around
+  **37–54 tok/s median, ~64 peak** with FP8 KV (~1M-token KV pool); vLLM
+  tool-eval **89/100**. It replaced a patched-image community recipe whose
+  claimed 74 tok/s had measured at 38 in practice here; the official checkpoint
+  on a stock nightly is the better foundation.
+- **What to know before switching**: it is a *different model* from the 27B
+  stacks — same alias, different behaviour; first boot downloads ~133 GB; and
+  the 51 GB PLE table's placement decides whether it fits the box at all
+  (`PLE_CPU_OFFLOAD=1` by default). Patches may be needed on the nightly: see
+  the stack README's risk note before the first boot.
+- **Run**: `cd dgx_spark_host/qwen38-flash-next-nvfp4 && docker compose -f compose.yml up --build`.
   Stop the other stacks first — the three stacks share port 8000.
 
-Full details, provenance, the upstream's claims, and the overridable
-parameters are in [`dgx_spark_host/flash_ultrafast/README.md`](dgx_spark_host/flash_ultrafast/README.md).
+Full details, expectations and sources are in
+[`dgx_spark_host/qwen38-flash-next-nvfp4/README.md`](dgx_spark_host/qwen38-flash-next-nvfp4/README.md).
 
 ## `agent_canvas_native/`
 

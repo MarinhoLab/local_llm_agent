@@ -1,0 +1,33 @@
+# compose.yml — Qwen3.8-Flash-Next NVFP4 (nvidia/Qwen3.8-Flash-Next-NVFP4) on
+# the DGX Spark. Self-contained per-model stack: `docker compose -f compose.yml
+# up --build`. First boot downloads ~133 GB into the mounted HF cache.
+
+services:
+  qwen-flash-next-vllm:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: dgx-qwen-flash-next-vllm
+
+    # Requires NVIDIA Container Toolkit on the DGX Spark host.
+    gpus: all
+    ipc: host
+
+    # Pass this stack's optional .env into the container, so overrides of the
+    # Dockerfile ENV defaults (GPU_MEMORY_UTILIZATION, MAX_NUM_SEQS, HF_TOKEN,
+    # ROPE_SCALING, ...) actually reach entrypoint.sh. Without it, compose only
+    # uses .env for ${...} interpolation in this file.
+    env_file:
+      - path: .env
+        required: false
+
+    environment:
+      - PYTHONUNBUFFERED=1
+
+    ports:
+      - "8000:8000"
+
+    volumes:
+      - ${HF_CACHE:-./hf-cache}:/root/.cache/huggingface
+
+    restart: unless-stopped

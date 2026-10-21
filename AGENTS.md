@@ -5,22 +5,21 @@ Guidance for AI agents (and humans) working in this repository.
 ## Project overview
 
 `local_llm_agent` runs a Qwen model on an **NVIDIA DGX Spark** (GB10, 128 GB unified memory, aarch64) via vLLM, and drives it from **macOS** through **OpenHands**
-over an SSH tunnel. The DGX side has one self-contained stack per model under `dgx_spark_host/`, all on port 8000 (run one at a time): **`qwen38-27b-nvfp4`** (the current default) serving `nvidia/Qwen3.8-27B-NVFP4` (NVIDIA's NVFP4 + FP8 quantization of the official `Qwen/Qwen3.8-27B`), **`qwen38-27b-bf16`** serving the original `Qwen/Qwen3.8-27B` in BF16, and **`flash_ultrafast`** running the [Qwen3.8 Flash DGX UltraFast v16b recipe](https://github.com/dime-online/qwen3.8-Flash-DGX-UltraFast) (patched image + W4A16/FP8 AutoRound-hybrid checkpoint + dense MTP drafter, alias `qwen-local`). The stacks are fully isolated — own image, compose, entrypoint, and defaults; the three stacks share no code or parameters.
+over an SSH tunnel. The DGX side has one self-contained stack per model under `dgx_spark_host/`, all on port 8000 (run one at a time): **`qwen38-27b-nvfp4`** (the current default) serving `nvidia/Qwen3.8-27B-NVFP4` (NVIDIA's NVFP4 + FP8 quantization of the official `Qwen/Qwen3.8-27B`), **`qwen38-27b-bf16`** serving the original `Qwen/Qwen3.8-27B` in BF16, and **`qwen38-flash-next-nvfp4`** serving `nvidia/Qwen3.8-Flash-Next-NVFP4` (NVIDIA's official NVFP4 quant of `Qwen/Qwen3.8-Flash-Next`, alias `qwen-local`). The stacks are fully isolated — own image, compose, entrypoint, and defaults; the three stacks share no code or parameters.
 
 Three self-contained stacks plus a notification sidecar:
 
 - `dgx_spark_host/` — the DGX Spark side, **one self-contained stack per
   model**, each with its own `entrypoint.sh`, `compose.yml`, and `README.md`
   (they share no code or parameters; all bind port 8000, so run one at a
-  time). The two 27B stacks additionally have their own `Dockerfile` holding
-  all `ENV` defaults; `flash_ultrafast/` instead pins a prebuilt patched image
-  built by its `setup-upstream.sh`:
+  time). Each also has its own `Dockerfile` holding
+  all `ENV` defaults:
   - `qwen38-27b-nvfp4/` — `nvidia/Qwen3.8-27B-NVFP4` (NVFP4+FP8, ~22 GB), the
     current default, served as `qwen-local`.
   - `qwen38-27b-bf16/` — `Qwen/Qwen3.8-27B` (official BF16, ~55 GB), served as
     `qwen-local`.
-  - `flash_ultrafast/` — the [Qwen3.8 Flash DGX UltraFast v16b recipe](https://github.com/dime-online/qwen3.8-Flash-DGX-UltraFast)
-    (patched image + W4A16/FP8 checkpoint + MTP drafter), served as `qwen-local`.
+  - `qwen38-flash-next-nvfp4/` — `nvidia/Qwen3.8-Flash-Next-NVFP4` (official
+    NVFP4 quant of the Flash-Next MoE, ~133 GB), served as `qwen-local`.
 - `agent_canvas_native/` — [Agent Canvas](https://docs.openhands.dev/openhands/usage/agent-canvas/setup)
   (UI + agent-server + automation server + ingress) running as local processes via
   Node.js ≥ 22.12 and `uv`, with **no Docker**; also reaches vLLM through the
@@ -43,7 +42,7 @@ Three self-contained stacks plus a notification sidecar:
   measurements suggested the per-token memory-bandwidth tax above ~4
   in-flight decodes outweighed continuous-batching gains, but the NVFP4 value
   was raised to 8 for multi-agent use; if multi-agent latency regresses, drop
-  it back toward 4 via `.env`.
+  it back toward 4 via `.env`. `qwen38-flash-next-nvfp4` ships **4**.
 - **The DGX Spark runs the LLM only.** `GPU_MEMORY_UTILIZATION` defaults to
   0.80 in both 27B stacks (`qwen38-27b-nvfp4` and `qwen38-27b-bf16`), and
   relies on nothing else sharing the unified memory pool. If the Spark gains other workloads, lower it.
@@ -67,20 +66,18 @@ Three self-contained stacks plus a notification sidecar:
   The stacks intentionally share no code or parameters — copy a stack folder
   (and adjust its `MODEL_NAME`/`GPU_MEMORY_UTILIZATION`/README) to add another
   checkpoint.
-- **Model (third option, `flash_ultrafast`)**: the throughput path is the
-  [dime-online/qwen3.8-Flash-DGX-UltraFast](https://github.com/dime-online/qwen3.8-Flash-DGX-UltraFast)
-  **v16b** recipe, kept as its own self-contained stack
-  (`dgx_spark_host/flash_ultrafast/`). It is isolated from the two 27B stacks
-  because it requires a different (patched) vLLM image, two extra downloads
-  (~130 GB: W4A16/FP8 AutoRound-hybrid checkpoint + FP8 PLE table), a built
-  T80 dense-MTP drafter, and ~30 pinned env/serve settings. Its speed comes
-  from the MTP drafter (block rejection), not lower-bit target weights —
-  output quality is preserved. It serves the same alias `qwen-local` as the
-  other stacks on the same port 8000; run only one stack at a time. Upstream claims: 74
-  tok/s single stream / 212 aggregate at 8 streams; 16 GB KV pool (upstream's
-  ~71 GiB residency figure is for the base recipe). The Apache-2.0 upstream is the source of truth for the image build and
-  the pinned values — `setup-upstream.sh` delegates to it; do not re-vendor or
-  re-tune here.
+- **Model (third option, `qwen38-flash-next-nvfp4`)**: `nvidia/Qwen3.8-Flash-Next-NVFP4`,
+  NVIDIA's official mixed-precision quant (NVFP4 routed experts, FP8 MTP
+  experts + PLE table) of the ~180B `Qwen3.8-Flash-Next` MoE, on the same
+  stock nightly. It replaced a patched-image community recipe whose claimed
+  74 tok/s measured **38** in practice here (MTP drafter acceptance ~2.7
+  tokens/step on agent work); published single-Spark numbers for this
+  checkpoint are 37–54 median / ~64 peak, vLLM tool-eval 89/100. Serves the
+  same alias `qwen-local` on port 8000; run one stack at a time. Two things
+  to know: the ~51 GB PLE n-gram table must stay out of the engine's memory
+  budget (`VLLM_PLE_CPU_OFFLOAD=1`, this stack's default), and the checkpoint
+  has vLLM version requirements (see the stack README). First boot downloads
+  ~133 GB.
 - **vLLM image**: `vllm/vllm-openai:nightly`. Qwen3.8 uses the `qwen3_5`
   hybrid-attention architecture (linear + full attention layers), which a
   pinned stable release may predate, so the stack tracks a nightly build rather
@@ -151,11 +148,9 @@ docker compose -f compose.yml up --build   # first run downloads ~22 GB of weigh
 # or the other 27B stack (original BF16 checkpoint, ~55 GB):
 cd ../qwen38-27b-bf16 && docker compose -f compose.yml up --build
 
-# or the throughput stack (one-time setup first, stop the other stacks first —
-# they share port 8000)
-cd ../flash_ultrafast
-./setup-upstream.sh                      # one-time: ~130 GB downloads + image/drafter build
-docker compose -f compose.yml up --build
+# or the Flash-Next stack (first boot downloads ~133 GB; stop the other
+# stacks first — they share port 8000)
+cd ../qwen38-flash-next-nvfp4 && docker compose -f compose.yml up --build
 
 # Agent Canvas side (macOS, SSH tunnel first: ssh -N -L 8000:localhost:8000 USER@DGX_SPARK_IP)
 ./agent_canvas_native/install.sh   # one-time (upgrades on re-run)
@@ -168,8 +163,7 @@ Sanity checks that do not need a GPU:
 # one file per `bash -n` invocation: with several paths it checks only the first
 bash -n dgx_spark_host/qwen38-27b-nvfp4/entrypoint.sh
 bash -n dgx_spark_host/qwen38-27b-bf16/entrypoint.sh
-bash -n dgx_spark_host/flash_ultrafast/entrypoint.sh
-bash -n dgx_spark_host/flash_ultrafast/setup-upstream.sh
+bash -n dgx_spark_host/qwen38-flash-next-nvfp4/entrypoint.sh
 bash -n agent_canvas_native/install.sh
 bash -n agent_canvas_native/run.sh
 python3 -m py_compile agent_canvas_native/ntfy_notifier.py
@@ -184,8 +178,7 @@ python3 -m py_compile agent_canvas_native/ntfy_notifier.py
   compose uses it for `${...}` interpolation (`HF_CACHE` in the two 27B stacks)
   and passes it into the container via `env_file`, so `HF_TOKEN` and overrides
   of the `Dockerfile` `ENV` defaults reach `entrypoint.sh` (compose defaults
-  work without it). `flash_ultrafast/` has no `HF_CACHE`/`HF_TOKEN` mount — its
-  `.env` only overrides the serve settings read by its `entrypoint.sh`.
+  work without it).
   `agent_canvas_native/example.env` is the native Canvas stack's tracked
   template — `install.sh` copies it to `.env`.
 - `context/` holds exported OpenHands conversation events and is git-ignored —
@@ -197,9 +190,8 @@ python3 -m py_compile agent_canvas_native/ntfy_notifier.py
 - **One stack per model, fully isolated.** Each `dgx_spark_host/<stack>/`
   folder holds its own `entrypoint.sh` (composes the `vllm serve` command from
   environment variables), `compose.yml`, and `README.md`; the two 27B stacks
-  additionally have their own `Dockerfile` with all `ENV` defaults for that
-  checkpoint, while `flash_ultrafast/` pins a prebuilt patched image and keeps
-  its defaults in `compose.yml`/`entrypoint.sh`. The stacks share no code or
+  have their own `Dockerfile` with all `ENV` defaults for that
+  checkpoint. The stacks share no code or
   parameters — the three stacks are independent copies, not a shared file with
   presets.
   Keep each stack's README env-var table in sync when its defaults change, and

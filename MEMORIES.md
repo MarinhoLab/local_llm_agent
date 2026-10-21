@@ -500,87 +500,6 @@ reproducible builds are needed. The "~2x decode" figure for MTP at
 `NUM_SPEC_TOKENS=5` was carried over from the earlier FP8 measurements; re-measure
 if the NVFP4 repack changes decode behaviour.
 
-### 2026-09-30 — Third DGX option: Qwen3.8 Flash DGX UltraFast (`flash_ultrafast`)
-
-Added a **third DGX-side configuration**, `dgx_spark_host/flash_ultrafast/`,
-running the [dime-online/qwen3.8-Flash-DGX-UltraFast](https://github.com/dime-online/qwen3.8-Flash-DGX-UltraFast)
-**v16b** recipe. It joins the two `MODEL_CONFIG` checkpoint presets (`nvfp4` /
-`b16`) already added to the standard `dgx_spark_host/` stack.
-
-**Why a separate substack, not a third `MODEL_CONFIG` value:** `nvfp4` and `b16`
-are plain Hugging Face checkpoints served by the same standard
-`vllm/vllm-openai:nightly` image via the shared `entrypoint.sh` `vllm serve` —
-so they fit a `MODEL_NAME`-style switch. The UltraFast recipe is fundamentally
-different and would be misleading to fold into that mechanism:
-
-- a **patched vLLM image** (`qwen38-flash-dgx:iter6d-20260910`), built from the
-  upstream's staged Dockerfiles (`iter6c` → `iter6d`) on top of
-  `vllm/vllm-openai:qwen38-flash-next@sha256:fc120e…` — CUDA 13.0, custom
-  low-latency SM12x GEMM, Mamba/PLE/MTP kernels, piecewise CUDA graphs with
-  twelve `--cc.splitting_ops`;
-- **two pinned downloads** (~135 GB total): `Saren/Qwen3.8-Flash-Next-W4A16-AutoRound-hybrid`
-  (revision `8b82f0b7…`) + `Saren/Qwen3.8-Flash-Next-ple-table-fp8`
-  (revision `50511b0a…`);
-- a **T80 dense-MTP drafter directory** that must be *built*
-  (`recipe/build/model/build.sh --run`), plus a 65,536-id draft vocabulary
-  (`draft-vocab-ids-K65536.txt.gz`);
-- a heavily pinned serve command (`VLLM_PLE_MMAP*`, `VLLM_DRAFTER_EXPERTS_FP8`,
-  `QWEN38NEXT_LOW_LATENCY_GEMM`, `VLLM_VERIFY_TOPK_TRITON`, `KEEP_DRAFT_BLOCKS`,
-  `--kv-cache-memory-bytes 16g`, `--gpu-memory-utilization 0.01`, MTP depth 3,
-  block rejection + probabilistic draft sampling, `qwen3_xml` tool parser).
-
-The W4A16 target keeps an FP8 PLE table **memory-mapped from storage**
-(`VLLM_PLE_MMAP=1`), so it stays ~71 GiB resident with a 16 GB KV pool at the
-262,144-token context. Speed comes from the MTP drafter (block rejection), not
-lower-bit target weights — output distribution is preserved (upstream: 93% on a
-492-item suite; teacher-forced agreement within the noise band).
-
-**What was added (this repo):**
-- `flash_ultrafast/entrypoint.sh` — thin wrapper that assembles the pinned
-  v16b `vllm serve` command from env vars and preflights the three mounted
-  assets (checkpoint, PLE table, draft vocab). Defaults = promoted v16b values;
-  every value overridable via `.env`.
-- `flash_ultrafast/compose.yml` — runs the **fixed** upstream image (not
-  rebuilt here), mounts the assets read-only, sets the ~30 pinned PLE/MTP/tuning
-  env vars, exposes port 8000, `shm_size: 16g`, `ipc: host`.
-- `flash_ultrafast/setup-upstream.sh` — the one-time Spark-side prep: clones the
-  upstream repo, installs the `hf` CLI, downloads the pinned checkpoint + PLE
-  table, builds the patched image, builds the T80 drafter, installs the draft
-  vocab, then verifies. Delegates the heavy build/download work to the upstream
-  Apache-2.0 scripts rather than vendoring them (no image patches/weights are
-  committed to this repo).
-- `flash_ultrafast/README.md` — provenance, upstream claims, setup/run/switch,
-  override table.
-- Docs: top-level `README.md` (three-option table + `### flash_ultrafast`
-  subsection), `AGENTS.md` (overview, stack list, Key-tuning-decisions,
-  conventions, Common commands).
-
-**Serving identity:** alias **`qwen`** (not `qwen-local`) on port 8000 — the
-three DGX options share port 8000, so run only ONE at a time. The
-`nvfp4`/`b16` and `flash_ultrafast` stacks are distinct compose projects and do
-**not** auto-stop each other; stop the other first (`docker compose -f
-../compose.yml down`). Clients (Agent Canvas / OpenCode) point at model `qwen`
-when this option is active.
-
-**Verification done here:** `bash -n` on the new entrypoint and setup script;
-`docker compose config` renders the pinned image + env for the substack. The
-entrypoint preflight path (assets present / missing) and arg-list assembly were
-checked by reading against the upstream `serve.sh`/`env` (SPLITS, PLE, MTP,
-prefix-cache, pinned-prompt branches). NOT run on a GPU: the patched image, the
-~135 GB downloads, the drafter build, and the actual 74/212 tok/s numbers all
-require the Spark. Re-verify the upstream's measurements on real hardware.
-
-**Caveats / re-verify on the Spark:** the promoted v16b image tag
-`qwen38-flash-dgx:iter6d-20260910` is a moving target only if the upstream
-re-releases it — `setup-upstream.sh` builds it from pinned parent
-`sha256:fc120e…`, so it is reproducible from upstream source. Changing ANY
-pinned value (KV bytes, seqs, MTP depth, batched tokens, `GPU_MEM`) creates a
-new variant whose speed/quality must be measured separately per upstream docs —
-keep the promoted values for the published throughput. The 65,536-id draft
-vocab is English/code-weighted: non-English (notably CJK) output gets lower
-draft *acceptance* (slower) but unchanged *quality*. Upstream is a **fork**;
-the model weights carry their own terms — check them before serving.
-
 ### 2026-10-02 — Restructure: one self-contained stack folder per model
 
 Requested: fully isolate the three DGX-side stacks — the two Qwen3.8-27B
@@ -595,8 +514,8 @@ shared one `Dockerfile`/`entrypoint.sh`/`compose.yml` between `nvfp4` and
 - `dgx_spark_host/qwen38-27b-b16/` — independent copy with `MODEL_NAME=
   Qwen/Qwen3.8-27B` and `GPU_MEMORY_UTILIZATION=0.70` (larger BF16 weights).
   Container `dgx-qwen-b16-vllm`. Served alias `qwen-local`.
-- `dgx_spark_host/flash_ultrafast/` — unchanged in behavior; its docs
-  updated to refer to the sibling stack folders.
+- The third (patched-recipe) stack folder moved unchanged; docs updated for
+  the sibling layout.
 
 The old shared `dgx_spark_host/Dockerfile`, `entrypoint.sh`, and
 `compose.yml` were deleted; `MODEL_CONFIG` no longer exists anywhere. A thin
@@ -616,46 +535,19 @@ the stack's own folder — move it when redeploying.
 nvfp4 and b16 entrypoints (correct model/memory flags per stack); `docker
 compose config` renders for all three stacks.
 
-### 2026-10-02 — flash_ultrafast now serves the alias `qwen-local`
-
-Requested: the flash stack should expose the same model alias as the 27B
-stacks so the macOS clients (Agent Canvas LLM profile, OpenCode
-`OPENCODE_MODEL_ID`) never change when switching stacks. Changed the default
-`SERVED_NAME` from `qwen` to `qwen-local` in
-`flash_ultrafast/entrypoint.sh` + `compose.yml` (still overridable via `.env`),
-and removed the client-side special-case notes (`OPENCODE_MODEL_ID=qwen` etc.)
-from the READMEs, `AGENTS.md`, and `agent_canvas_native/README.md`. All three
-stacks now serve `qwen-local` on port 8000; only the underlying checkpoint
-differs. (Earlier MEMORIES entries describing the `qwen` alias are history.)
-
-**Verification:** `bash -n`; `docker compose config` shows
-`SERVED_NAME: qwen-local`; stub dry-run emits `--served-model-name
-qwen-local`.
-
 ### 2026-10-02 — Fact-check fixes for the per-stack restructure
 
-Checked against the upstream UltraFast repo (`recipe/config/v16b`,
-`docs/BUILD.md`, README), the Hugging Face API, and the model cards:
+Checked against the Hugging Face API and the model cards:
 
-- `setup-upstream.sh` passed the *local directory* to `hf download` as the repo
-  id; it now downloads `Saren/Qwen3.8-Flash-Next-W4A16-AutoRound-hybrid` and
-  `Saren/Qwen3.8-Flash-Next-ple-table-fp8` at the pinned revisions. The
-  checkpoint is ~75 GB (not ~27 GB) and the PLE table ~52 GB (~130 GB total,
-  as upstream says). Re-runs skip the drafter build once its output exists
-  (upstream refuses to overwrite), and the verify step checks the
-  `-mtpdense-g32` directory that `compose.yml` mounts.
 - `.env` overrides never reached the containers: compose only used `.env` for
   `${...}` interpolation, so `GPU_MEMORY_UTILIZATION`, `MAX_NUM_SEQS`,
   `HF_TOKEN`, `SPEC_EXTRA`, `PIN_PROMPT`, ... were silently ignored (this
   predates the restructure). Each stack's compose now has an optional
   `env_file: .env`.
-- `flash_ultrafast/entrypoint.sh`: `PREFIX_CACHE=0` now passes
-  `--no-enable-prefix-caching` (vLLM enables it by default), as upstream does.
 - The BF16 README said 0.70 is lower *because* the weights are larger; the
   fraction caps weights + KV together, so larger weights shrink KV at a given
   fraction. 0.70 still leaves ~25 GiB of fp8 KV (~32 KiB/token, ~3 full
   262144-token sequences); the rationale was corrected, the value kept.
-- Upstream's ~71 GiB residency is the base recipe's, not v16b's; reworded.
 - Stale references to the removed shared `dgx_spark_host/compose.yml`,
   `dgx-qwen-vllm`, and `MODEL_CONFIG` in the docker-usage skill and
   `opencode_client/example.env` were updated.
@@ -663,8 +555,7 @@ Checked against the upstream UltraFast repo (`recipe/config/v16b`,
 **Verification:** `bash -n` + `shellcheck -S warning` on all scripts;
 `docker compose config` for all three stacks with and without a `.env` (the
 `.env` values now appear in the container environment, 0 of them before);
-stub `vllm` run of the flash entrypoint with `PREFIX_CACHE=1/0`; stub `hf`
-run of the setup download step. Not run on a GPU.
+stub `vllm` runs of the stack entrypoints with `PREFIX_CACHE=1/0`. Not run on a GPU.
 
 ### 2026-10-02 — `qwen38-27b-b16` renamed to `qwen38-27b-bf16`
 
@@ -704,40 +595,6 @@ raised again via `.env`.
 **Verification:** stub-`vllm` dry-run of the BF16 entrypoint emits
 `--max-num-seqs 4`. Not run on a GPU.
 
-### 2026-10-02 — `setup-upstream.sh`: hf venv moved out of the clone dir
-
-First run on the Spark failed at step 1: `fatal: destination path
-'~/qwen3.8-Flash-DGX-UltraFast' already exists and is not an empty directory`.
-Cause: when `hf` was not installed, the tooling step created its venv at
-`$CLONE_DIR/.venv` *before* cloning, so `git clone` found a non-empty target.
-The venv now lives at `$VENV_DIR` (default `~/.cache/qwen38-v16b/hf-venv`,
-reused on re-runs, `hf` called by path). Step 1 removes a clone dir that holds
-only the stale `.venv` from the old script, and stops with a clear message
-for any other non-git directory.
-
-**Verification:** `bash -n` + `shellcheck -S warning`; stub run (fake git,
-docker, python3) of: the Spark state (dir with only `.venv`, no `hf`) →
-recovers, clones, downloads; re-run reuses venv + clone; non-git dir with
-other files → clear error; clean first run.
-
-### 2026-10-02 — Drafter build: upstream test writes into a read-only /work
-
-On the Spark, step 4 (`recipe/build/model/build.sh --run`) died in upstream's
-own unit test: `OSError: [Errno 30] Read-only file system:
-'_iter4_st_test.safetensors.partial'`. Upstream bug (still on its main,
-0c391a3): `test_safetensors_roundtrip(tmp="_iter4_st_test.safetensors")`
-writes into the working dir, and `build.sh` runs the tests with
-`-v "$here:/work:ro" -w /work`. The other tests use `tempfile`. Before the
-drafter build, `setup-upstream.sh` now rewrites that one default to
-`/tmp/_iter4_st_test.safetensors` in the local upstream clone (idempotent,
-warns when it patches). The image (step 3) had built and passed its checks.
-
-**Verification:** reproduced locally by running upstream's test from a
-read-only copy of `recipe/build/model` (fails writing the `.partial` file);
-with the patched default, 289/289 checks pass and the scratch file is
-removed. The `sed` edit checked on Linux (alpine): patches once, no-op on
-re-run. `bash -n` + `shellcheck -S warning`.
-
 ### 2026-10-02 — `install.sh` installs and verifies the latest Agent Canvas
 
 Context: Agent Canvas showed `'PromptTokensDetailsWrapper' object has no
@@ -762,20 +619,50 @@ registry can't be queried it warns and skips the check.
 agent-canvas): upgrade in place 1.20.0 → 1.24.0 passes; stale 1.20.0 earlier
 on PATH → exit 1 with the copies listed; registry unreachable → warning,
 continues; npm receives `install -g @openhands/agent-canvas@latest`.
-### 2026-10-02 — flash_ultrafast: `PROMPT_TOKENS_DETAILS` switch, default off
 
-Server-side fix for the Agent Canvas crash `'PromptTokensDetailsWrapper'
-object has no attribute 'cache_creation_tokens'`. Upstream v16b passes
-`--enable-prompt-tokens-details`, which adds `usage.prompt_tokens_details`
-(cached-token counts) to API responses; openhands-sdk < 1.50.0 (every Agent
-Canvas release up to 1.24.0) crashes on that block. The flag is now behind
-`PROMPT_TOKENS_DETAILS` (entrypoint + compose), default `0`; `1` restores the
-upstream value. It is reporting-only: no effect on speed or output. The 27B
-stacks never passed it, which is why they were unaffected. The client-side
-fix is an Agent Canvas release pinning sdk >= 1.50.0 (see `install.sh`).
+### 2026-10-21 — DGX stack swap: patched-recipe third option → official `qwen38-flash-next-nvfp4`
 
-**Verification:** `bash -n` + `shellcheck -S warning`; stub-`vllm` run: unset
-and `0` emit no `--enable-prompt-tokens-details`, `1` adds exactly that
-argument; `docker compose config` renders `0` by default and `1` from `.env`.
-Earlier repro: openhands-sdk 1.49.x works when the usage carries no
-`prompt_tokens_details`.
+Requested: replace the third DGX stack (a community patched-image recipe
+serving a W4A16-AutoRound repack of Qwen3.8-Flash-Next) with
+`nvidia/Qwen3.8-Flash-Next-NVFP4` — NVIDIA's official quant on the stock
+nightly — and remove the old stack and its documentation from the repo. New
+stack: `dgx_spark_host/qwen38-flash-next-nvfp4/` (Dockerfile/entrypoint/
+compose/README, same `qwen-local` alias and port).
+
+**Why**: the replaced stack had no measurable edge — its recipe claims 74
+tok/s single stream, but live-engine metrics here showed **38 tok/s** (70.6 ms
+per decode step × 2.70 tokens/step; per-position MTP acceptance 74/55/41%).
+Its upstream repo was a 3-day project with no commits since 2026-09-29, built
+on a 4-like checkpoint repo; official-channel alternatives (386K downloads on
+HF, active recipes with upstream-PR-numbered patches) support the 1M-context
+and YaRN/fp8-KV knobs the old stack lacked. Earlier history entries about that
+stack were removed with it; the durable findings are folded into this entry.
+
+**Facts worth keeping from the old stack's measurement history:**
+- KV-pool sizing: `16g` parses as 16e9 bytes (≈14.9 GiB), *not* 16 GiB — the
+  pool held 515,786 tokens = 1.97 full 262,144-token sequences
+  (`kv_cache_max_concurrency`). Read `cache_config_info` from `/metrics`
+  instead of estimating; `CTX` shares the pool, it does not reserve it.
+- The Agent Canvas workload is prefill-dominated (~92:1 prompt:generated over
+  3.38B prompt tokens) — decode speed is a minor term; a client-side
+  compaction ceiling beats drafter tuning here.
+- `num_preemptions_total` climbing is the symptom of over-subscribed SEQS.
+
+**New stack caveats** (see its README for sources): requirements per the HF
+model card — nightly ≥ `d4d703ca` for serving, MTP needs PR #55513 (merged);
+PLE gather can fail under CUDA-graph piecewise compile (open vLLM issue,
+`mode:"eager"` workaround); the ~51 GB PLE table stays out of the engine
+budget via `VLLM_PLE_CPU_OFFLOAD=1` (default) or boot OOMs at util 0.80; first
+boot downloads ~133 GB. Ships `MAX_NUM_SEQS=4` (repo bandwidth-tax rule),
+`MAX_NUM_BATCHED_TOKENS=4096` (published-recipes value), MTP depth 3, YaRN
+opt-in via `ROPE_SCALING` + `MAX_MODEL_LEN=1048576`. No patches shipped —
+first boot is the experiment; community patch series is the fallback.
+
+**Verification:** stub-`vllm` dry-run emits the expected arg list (modelopt
+quant, MTP 3, flashinfer-autotune off), `VLLM_PLE_CPU_OFFLOAD` reaches the
+engine env iff `PLE_CPU_OFFLOAD=1`, and `ROPE_SCALING` renders the
+`--hf-overrides` JSON; `bash -n` clean; `docker compose config` renders.
+NOT verified: the boot itself (needs the Spark + 133 GB download). The old
+stack's host-side assets (~130 GB under `~/models`, image
+`qwen38-flash-dgx:iter6d-20260910`) are untouched on the Spark — delete
+manually once the new stack boots.

@@ -9,7 +9,7 @@ defaults) and all bind port 8000 — run only ONE at a time:
 
 - `../qwen38-27b-nvfp4/` — the NVIDIA NVFP4 quantization (~22 GB)
 - `../qwen38-27b-bf16/` — this stack (official BF16, ~55 GB)
-- `../flash_ultrafast/` — the Qwen3.8 Flash DGX UltraFast v16b recipe
+- `../qwen38-flash-next-nvfp4/` — NVIDIA's official `Qwen3.8-Flash-Next-NVFP4` quant (~133 GB)
 
 ## Run
 

@@ -29,13 +29,17 @@ this folder shares no code or parameters with them.
 ## Upstream claims (v16b, one GB10) — re-verify on your hardware
 
 - **74.1 tok/s** single stream, **212.2 tok/s** aggregate at 8 streams
-  (copy-heavy, low-effort workload, shared cached prefix).
+  (copy-heavy, low-effort workload, shared cached prefix). This stack defaults
+  to `SEQS=2` (see [Concurrency](#concurrency)), so the aggregate figure is not
+  what you get out of the box — raise `SEQS` for it.
 - Cold prefill up to **~4,016 tok/s** (16k), 2–3.4× faster than the base recipe.
 - 93% on a 492-item eval suite; teacher-forced agreement with the original
   checkpoint within the noise band.
-- KV pool **16 GB** at the pinned 262,144-token context. (Upstream's
-  **~71 GiB** residency figure is the *base recipe's*; for v16b it reports a
-  16.5 GiB available-memory low-water in its capacity run.)
+- KV pool **16 GB** (`= 16e9 bytes ≈ 14.9 GiB`) at the pinned 262,144-token
+  context: **515,786 tokens** measured from a running engine, i.e. 1.97
+  full-context sequences. (Upstream's **~71 GiB** residency figure is the
+  *base recipe's*; for v16b it reports a 16.5 GiB available-memory low-water in
+  its capacity run.)
 
 These are the upstream's measurements. The CJK caveat applies: the 65,536-id
 draft vocabulary is English/code-weighted, so non-English output gets lower
@@ -82,6 +86,36 @@ The Agent Canvas client keys off the served model alias, and this
 stack uses the same **`qwen-local`** alias as the 27B stacks, so clients need
 no changes (see `../README.md` for the Agent Canvas LLM-profile example).
 
+## Concurrency
+
+`SEQS` defaults to **2**, not upstream's **8**. The KV pool is the reason: a
+running engine reports `kv_cache_size_tokens=515,786` for `KV_BYTES=16g`, i.e.
+**1.97** sequences' worth of the full 262,144-token context (`kv_cache_max_concurrency`
+in `/metrics`). Two agents can therefore sit at full context only if neither
+exceeds ~257,893 tokens; the third starts preempting.
+
+`CTX` is a per-sequence ceiling, not a reservation, so the sequences share the
+pool: how many fit depends on how long your contexts actually get.
+
+| Context per agent | Fits by KV | At `SEQS=2` | At upstream `SEQS=8` |
+|---|---|---|---|
+| 8K | 62 | 2 | 8 |
+| 32K | 15 | 2 | 8 |
+| 64K | 7 | 2 | 8 |
+| 128K | 3 | 2 | 3 |
+| 256K | 1 | 1 | 1 |
+
+So `SEQS=2` guarantees *two agents can each reach full context without KV
+preemption*, at the cost of fan-out for short contexts: up to ~64K per agent
+the pool would happily have served 8. Raise it back via `.env` (`SEQS=8`) when
+running many short sessions — the same trade the `qwen38-27b-bf16` stack documents
+at 4.
+
+**Pair it with a client-side compaction ceiling.** `SEQS=2` caps how many
+sequences run; it does not stop one from growing past the pool. Set the
+condenser's `max_tokens` below ~257K per agent and the two together make
+preemption structurally impossible rather than merely unlikely.
+
 ## Overriding the pinned values
 
 The promoted v16b values are the defaults here; they are overridable via
@@ -95,7 +129,7 @@ variable it reads — including ones not in the table, such as `SPEC_EXTRA`,
 | `FLASH_IMAGE` | `qwen38-flash-dgx:iter6d-20260910` | Patched image (pinned by upstream) |
 | `SERVED_NAME` | `qwen-local` | API model alias (same as the 27B stacks — clients need no changes) |
 | `CTX` | `262144` | Max model length |
-| `SEQS` | `8` | Max concurrent sequences |
+| `SEQS` | `2` (**upstream: `8`**) | Max concurrent sequences — see [Concurrency](#concurrency) |
 | `GPU_MEM` | `0.01` | Fraction (KV is set explicitly, not by this fraction) |
 | `KV_BYTES` | `16g` | Explicit KV pool |
 | `MTP` | `3` | MTP draft depth (`0` disables speculative decoding) |

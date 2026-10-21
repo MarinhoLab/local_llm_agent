@@ -10,7 +10,8 @@
 # the mounted assets.
 #
 # Pinned defaults below are the upstream promoted v16b values
-# (recipe/config/v16b/env + serve.sh). Every value is overridable via this
+# (recipe/config/v16b/env + serve.sh), with one deliberate divergence: SEQS=2
+# instead of 8 (see README "Concurrency"). Every value is overridable via this
 # stack's .env (compose.yml passes it into the container via env_file).
 
 set -euo pipefail
@@ -26,7 +27,10 @@ DRAFT_VOCAB="${FLASH_DRAFT_VOCAB:-/draft-vocab/ids.txt}"
 : "${PORT:=8000}"
 : "${LOAD_FORMAT:=fastsafetensors}"
 : "${CTX:=262144}"
-: "${SEQS:=8}"
+# Upstream v16b pins 8; lowered to 2 to match the KV pool's measured room for
+# two full-context sequences (kv_cache_max_concurrency 1.97). Raise via .env for
+# short-context fan-out -- see README "Concurrency".
+: "${SEQS:=2}"
 : "${GPU_MEM:=0.01}"
 : "${KV_BYTES:=16g}"
 : "${PREFIX_CACHE:=1}"

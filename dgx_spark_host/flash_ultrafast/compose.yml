@@ -78,7 +78,9 @@ services:
       #     .env) ---
       - SERVED_NAME=${SERVED_NAME:-qwen-local}
       - CTX=${CTX:-262144}
-      - SEQS=${SEQS:-8}
+      # 2, not upstream's 8: the running engine reports a 515,786-token KV pool
+      # = kv_cache_max_concurrency 1.97 at the full 262,144-token context.
+      - SEQS=${SEQS:-2}
       - GPU_MEM=${GPU_MEM:-0.01}
       - KV_BYTES=${KV_BYTES:-16g}
       - MTP=${MTP:-3}

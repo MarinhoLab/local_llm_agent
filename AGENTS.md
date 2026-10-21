@@ -43,7 +43,9 @@ Three self-contained stacks plus a notification sidecar:
   measurements suggested the per-token memory-bandwidth tax above ~4
   in-flight decodes outweighed continuous-batching gains, but the NVFP4 value
   was raised to 8 for multi-agent use; if multi-agent latency regresses, drop
-  it back toward 4 via `.env`.
+  it back toward 4 via `.env`. `flash_ultrafast` defaults to **2**, because its
+  explicit 16 GB (`16e9` byte) KV pool measures 515,786 tokens — 1.97 full-context
+  sequences; see that stack's README "Concurrency".
 - **The DGX Spark runs the LLM only.** `GPU_MEMORY_UTILIZATION` defaults to
   0.80 in both 27B stacks (`qwen38-27b-nvfp4` and `qwen38-27b-bf16`), and
   relies on nothing else sharing the unified memory pool. If the Spark gains other workloads, lower it.
@@ -80,7 +82,9 @@ Three self-contained stacks plus a notification sidecar:
   tok/s single stream / 212 aggregate at 8 streams; 16 GB KV pool (upstream's
   ~71 GiB residency figure is for the base recipe). The Apache-2.0 upstream is the source of truth for the image build and
   the pinned values — `setup-upstream.sh` delegates to it; do not re-vendor or
-  re-tune here.
+  re-tune here. The one intentional exception so far is `SEQS=2` (upstream: 8),
+  changed to match the KV pool's measured full-context capacity; treat it as a
+  documented divergence, not a re-tune.
 - **vLLM image**: `vllm/vllm-openai:nightly`. Qwen3.8 uses the `qwen3_5`
   hybrid-attention architecture (linear + full attention layers), which a
   pinned stable release may predate, so the stack tracks a nightly build rather

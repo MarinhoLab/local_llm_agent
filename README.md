@@ -61,7 +61,8 @@ enabled via `--limit-mm-per-prompt '{"image":4}'`.
   context. A dense T80 MTP drafter (depth 3, block
   rejection) provides the speed — upstream reports **74 tok/s single stream**
   and **212 tok/s aggregate at 8 streams** on one GB10 (re-verify on your
-  hardware).
+  hardware). This stack ships `SEQS=2` rather than upstream's 8, because its
+  16 GB KV pool holds only ~1.97 full-context sequences (see the stack README).
 - **Why fully isolated**: it uses a different (patched) image, extra
   downloads (~130 GB), and a drafter build — so it has its own folder with its
   own compose/entrypoint/pinned env, rather than sharing parameters with the

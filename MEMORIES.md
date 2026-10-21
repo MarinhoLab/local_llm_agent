@@ -779,3 +779,56 @@ and `0` emit no `--enable-prompt-tokens-details`, `1` adds exactly that
 argument; `docker compose config` renders `0` by default and `1` from `.env`.
 Earlier repro: openhands-sdk 1.49.x works when the usage carries no
 `prompt_tokens_details`.
+
+### 2026-10-21 — `flash_ultrafast`: `SEQS` limited to 2
+
+Requested: cap `flash_ultrafast` concurrency at 2, matching the KV pool's real
+full-context capacity, so concurrent agents stop preempting each other.
+`flash_ultrafast` now defaults to `SEQS=2` (was 8, upstream v16b's value); the
+two 27B stacks are unchanged (8 / 4).
+
+**Why 2 and not a larger number** — read from a running engine via
+`/metrics` (`cache_config_info`):
+
+- `kv_cache_memory_bytes=16000000000` — `16g` parses as **16e9 bytes ≈ 14.90
+  GiB**, not 16 GiB. Worth stating because the pool is ~7% smaller than "16 GB"
+  reads as, and every fits/doesn't-fit call depends on it.
+- `kv_cache_size_tokens=515,786` at `cache_dtype=auto` → ~31,020 bytes/token,
+  and `kv_cache_max_concurrency=1.9676`. So **one** agent fits at the full
+  262,144 (51% of the pool); **two** need 524,288, i.e. ~1.6% over — they work
+  only if neither exceeds ~257,893 tokens. A third is clearly over.
+- Corroborated by `num_preemptions_total=409` since the engine start.
+
+`CTX` is a per-sequence ceiling, not a reservation, so sequences share the pool
+and the number that fits depends on real context lengths: 8 agents at ≤64K each
+(~64,473 tokens is the exact crossover), 3 at 128K, 1 at 256K. `SEQS=2` is
+therefore a *worst-case guarantee* — two agents can each reach full context
+without KV preemption — not a throughput-maximising choice; short-context
+fan-out is a regression until `SEQS` is raised via `.env`.
+
+**Intentional divergence from upstream.** `AGENTS.md` says the Apache-2.0
+upstream is the source of truth for the pinned values and not to re-tune here;
+`SEQS` is on the README's "keep at the promoted value for published throughput"
+list, and 212 tok/s aggregate was measured at 8 streams. This is the first
+deliberate exception, recorded as such in both READMEs and `AGENTS.md` rather
+than presented as v16b. The upstream repo has no long-context/`CTX` knob at all.
+
+**Deliberately NOT changed:** `KV_BYTES` (16g) and `--kv-cache-dtype auto`.
+fp8 KV would give ~3.4 full-context sequences instead of 1.97, but `auto` is
+upstream-pinned, costs ~10% decode / ~30% prefill plus a measurable quality
+delta, and is the recipe's most sensitive knob. Left for a separate decision.
+A `KV_DTYPE` env hook (mirroring `SEQS`/`KV_BYTES`) would be the clean way to
+make that switchable; not added here.
+
+**Companion client-side change (outside this repo):** `SEQS=2` bounds how many
+sequences run but not how long each gets. Pair it with a condenser ceiling below
+~257K tokens per agent — then preemption is structurally impossible rather than
+merely unlikely. Note `agent_canvas_native/agent-profiles/default.json` ships
+`condenser.max_tokens=220009`, already under that line; raising it would remove
+the guarantee this change provides.
+
+**Verification:** `docker compose config` renders `SEQS: "2"` by default and
+honours `SEQS=1/8` from the environment; stub-`vllm` dry-run of the entrypoint
+emits `--max-num-seqs 2` by default and `8` / `4` when overridden. Server-side
+figures quoted above are from the live Spark; the capacity arithmetic itself
+was not re-measured on a GPU.

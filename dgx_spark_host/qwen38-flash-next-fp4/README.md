@@ -57,9 +57,10 @@ override via this folder's `.env` (passed into the container by `compose.yml`'s
 | `SERVED_MODEL_NAME`      | `qwen-local`                         | Alias exposed by the API |
 | `HOST` / `PORT`          | `0.0.0.0` / `8000`                   | Bind address / listen port |
 | `API_KEY`                | `local-dgx-key`                      | API key for authentication |
-| `MAX_MODEL_LEN`          | `262144`                             | Max sequence length (native max; card extends to 1M via YaRN) |
+| `MAX_MODEL_LEN`          | `524288`                             | Max sequence length (262144 is native; 524288 relies on `YARN_FACTOR=2.0`) |
+| `YARN_FACTOR`            | `2.0`                                | Static YaRN scaling over the 262144 native window (Qwen base card). `2.0` ↔ `MAX_MODEL_LEN=524288`; `4.0` ↔ `1000000`; `0` disables (also set `MAX_MODEL_LEN=262144`). Can slightly hurt short-prompt quality |
 | `GPU_MEMORY_UTILIZATION` | `0.8`                                | Fraction of the unified pool for weights + KV |
-| `MAX_NUM_SEQS`           | `8`                                  | Max concurrent sequences |
+| `MAX_NUM_SEQS`           | `4`                                  | Max concurrent sequences (card uses 8; 4 matches ~1M-token KV pool at ~250K per agent) |
 | `MAX_NUM_BATCHED_TOKENS` | `4096`                               | Max tokens per batch |
 | `MTP`                    | `4`                                  | MTP speculative tokens; `0` disables (checkpoint ships the MTP module) |
 | `KV_CACHE_DTYPE`         | `fp8`                                | KV cache dtype |
@@ -87,9 +88,12 @@ override via this folder's `.env` (passed into the container by `compose.yml`'s
   false`), so text, `image_url` and `video_url` are accepted. Unlike the 27B
   stacks this stack does not pass `--limit-mm-per-prompt` (the card does not set
   it); add it in `entrypoint.sh` if you want to cap per-request images.
-- **Concurrency**: `MAX_NUM_SEQS=8`, the card's value, with
-  `MAX_NUM_BATCHED_TOKENS=4096`. Drop it toward 4 if multi-agent latency
-  regresses, as with the 27B stacks.
+- **Concurrency**: `MAX_NUM_SEQS=4` (the card uses 8) with
+  `MAX_NUM_BATCHED_TOKENS=4096`. NVIDIA quotes ~1M tokens of FP8 KV on the
+  Spark with PLE offload, i.e. roughly 3-4 agents at the full 262144 context
+  sharing one pool (about 1.9 sessions at the 524288 YaRN ceiling); 4 matches the former. Check the startup log's `Maximum
+  concurrency for 262,144 tokens per request` line; raise it via `.env` if
+  agents usually run far below full context.
 - **Throughput**: community measurements on one Spark put decode near 45-50
   tok/s single-stream at short context, decaying to ~33 tok/s around 32K of
   context, with prefill holding ~2.1K tok/s. Re-verify on your hardware —

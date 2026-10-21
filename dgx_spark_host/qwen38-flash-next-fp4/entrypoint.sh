@@ -18,8 +18,8 @@ set -euo pipefail
 : "${HOST:=0.0.0.0}"
 : "${PORT:=8000}"
 : "${API_KEY:=local-dgx-key}"
-: "${MAX_MODEL_LEN:=262144}"
-: "${MAX_NUM_SEQS:=8}"
+: "${MAX_MODEL_LEN:=524288}"
+: "${MAX_NUM_SEQS:=4}"
 : "${MAX_NUM_BATCHED_TOKENS:=4096}"
 : "${GPU_MEMORY_UTILIZATION:=0.8}"
 : "${DTYPE:=bfloat16}"
@@ -99,6 +99,16 @@ args=(
   --gpu-memory-utilization "${GPU_MEMORY_UTILIZATION}"
   --compilation-config "${COMPILATION_CONFIG}"
 )
+
+# Opt-in long context (Qwen/Qwen3.8-Flash-Next card, "Processing Ultra-Long
+# Texts"): static YaRN over the 262144 native window. Set YARN_FACTOR (e.g. 4.0
+# for 1M) AND raise MAX_MODEL_LEN (e.g. 1000000) in .env. Static YaRN can hurt
+# quality on short prompts, so it stays off (0) by default.
+: "${YARN_FACTOR:=2.0}"
+if [ "${YARN_FACTOR}" != "0" ]; then
+  export VLLM_ALLOW_LONG_MAX_MODEL_LEN=1
+  args+=(--hf-overrides "{\"text_config\":{\"rope_parameters\":{\"mrope_interleaved\":true,\"mrope_section\":[11,11,10],\"rope_type\":\"yarn\",\"rope_theta\":10000000,\"partial_rotary_factor\":0.25,\"factor\":${YARN_FACTOR},\"original_max_position_embeddings\":262144}}}")
+fi
 
 if [ "${PREFIX_CACHE}" = "1" ]; then args+=(--enable-prefix-caching); else args+=(--no-enable-prefix-caching); fi
 if [ "${FLASHINFER_AUTOTUNE}" != "1" ]; then args+=(--no-enable-flashinfer-autotune); fi

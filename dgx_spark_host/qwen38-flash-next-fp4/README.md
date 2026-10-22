@@ -3,17 +3,13 @@
 Self-contained stack that serves **`nvidia/Qwen3.8-Flash-Next-FP4-Local`** —
 NVIDIA Model Optimizer's QAD (quantization-aware distillation) NVFP4/MXFP8
 build of `Qwen/Qwen3.8-Flash-Next`, ~96 GiB on disk — via vLLM on the DGX
-Spark. This is the option for the **largest model that fits one Spark**: a
-125B-parameter multimodal MoE (6B active, plus a 51B n-gram embedding table and
-a 4B MTP module), against the 27B dense checkpoints in the sibling stacks.
+Spark. This is the **largest model that fits one Spark**: a 125B-parameter
+multimodal MoE (6B active, plus a 51B n-gram embedding table and a 4B MTP
+module).
 
-The DGX Spark host offers three sibling stacks, one folder per model (see
-`../README.md`); they are fully isolated (own image, compose, entrypoint,
-defaults) and all bind port 8000 — run only ONE at a time:
-
-- `../qwen38-27b-nvfp4/` — `nvidia/Qwen3.8-27B-NVFP4` (NVFP4, ~22 GB)
-- `../qwen38-27b-bf16/` — the official `Qwen/Qwen3.8-27B` in BF16 (~55 GB)
-- `qwen38-flash-next-fp4/` — this stack (FP4-Local, ~96 GiB)
+This is currently the only stack in `dgx_spark_host/` (see `../README.md`). It
+is self-contained (own image, compose, entrypoint, defaults) and binds port
+8000, so no other DGX stack may run at the same time.
 
 ## Provenance
 
@@ -57,8 +53,8 @@ override via this folder's `.env` (passed into the container by `compose.yml`'s
 | `SERVED_MODEL_NAME`      | `qwen-local`                         | Alias exposed by the API |
 | `HOST` / `PORT`          | `0.0.0.0` / `8000`                   | Bind address / listen port |
 | `API_KEY`                | `local-dgx-key`                      | API key for authentication |
-| `MAX_MODEL_LEN`          | `524288`                             | Max sequence length (262144 is native; 524288 relies on `YARN_FACTOR=2.0`) |
-| `YARN_FACTOR`            | `2.0`                                | Static YaRN scaling over the 262144 native window (Qwen base card). `2.0` ↔ `MAX_MODEL_LEN=524288`; `4.0` ↔ `1000000`; `0` disables (also set `MAX_MODEL_LEN=262144`). Can slightly hurt short-prompt quality |
+| `MAX_MODEL_LEN`          | `262144`                             | Max sequence length (the checkpoint's native max; raise together with `YARN_FACTOR` for long context) |
+| `YARN_FACTOR`            | `0` (off)                            | Static YaRN scaling over the 262144 native window (Qwen base card). `2.0` ↔ `MAX_MODEL_LEN=524288`; `4.0` ↔ `1000000`; `0` disables. Can slightly hurt short-prompt quality, so it is opt-in |
 | `GPU_MEMORY_UTILIZATION` | `0.8`                                | Fraction of the unified pool for weights + KV |
 | `MAX_NUM_SEQS`           | `4`                                  | Max concurrent sequences (card uses 8; 4 matches ~1M-token KV pool at ~250K per agent) |
 | `MAX_NUM_BATCHED_TOKENS` | `4096`                               | Max tokens per batch |
@@ -85,13 +81,13 @@ override via this folder's `.env` (passed into the container by `compose.yml`'s
   it. `DISK_BACKEND=io_uring` needs the `seccomp/apparmor=unconfined` and ulimit
   settings in `compose.yml`.
 - **Image inputs**: the checkpoint is a native VLM (`language_model_only:
-  false`), so text, `image_url` and `video_url` are accepted. Unlike the 27B
-  stacks this stack does not pass `--limit-mm-per-prompt` (the card does not set
-  it); add it in `entrypoint.sh` if you want to cap per-request images.
+  false`), so text, `image_url` and `video_url` are accepted. This stack does not
+  pass `--limit-mm-per-prompt` (the card does not set it); add it in
+  `entrypoint.sh` if you want to cap per-request images.
 - **Concurrency**: `MAX_NUM_SEQS=4` (the card uses 8) with
   `MAX_NUM_BATCHED_TOKENS=4096`. NVIDIA quotes ~1M tokens of FP8 KV on the
   Spark with PLE offload, i.e. roughly 3-4 agents at the full 262144 context
-  sharing one pool (about 1.9 sessions at the 524288 YaRN ceiling); 4 matches the former. Check the startup log's `Maximum
+  sharing one pool; 4 matches that. Check the startup log's `Maximum
   concurrency for 262,144 tokens per request` line; raise it via `.env` if
   agents usually run far below full context.
 - **Throughput**: community measurements on one Spark put decode near 45-50
@@ -99,13 +95,11 @@ override via this folder's `.env` (passed into the container by `compose.yml`'s
   context, with prefill holding ~2.1K tok/s. Re-verify on your hardware —
   MTP acceptance moves these by a few tok/s.
 
-> **Port 8000 is shared** with the two 27B stacks
-> (`../qwen38-27b-nvfp4/`, `../qwen38-27b-bf16/`). Run only ONE of the three
-> DGX stacks at a time — stop the others first (e.g.
-> `docker compose -f ../qwen38-27b-nvfp4/compose.yml down`).
+> **Port 8000 is the shared DGX port.** Run only ONE DGX stack at a time —
+> stop any other stack first (e.g. `docker compose -f ../<stack>/compose.yml down`).
 
 ## Clients
 
-The Agent Canvas client keys off the served model alias, and this stack uses
-the same **`qwen-local`** alias as the other stacks, so clients need no
-changes (see `../README.md` for the Agent Canvas LLM-profile example).
+The Agent Canvas client keys off the served model alias, and this stack uses the
+**`qwen-local`** alias, so clients need no changes (see `../README.md` for the
+Agent Canvas LLM-profile example).

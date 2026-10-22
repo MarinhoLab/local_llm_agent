@@ -187,6 +187,7 @@ docker compose -f compose.yml up --build
 ./opencode_native/install.sh       # one-time (upgrades on re-run)
 ./opencode_native/run.sh /path/to/repo   # TUI
 ./opencode_native/run.sh server    # headless API + web UI: http://localhost:4096
+./opencode_native/run.sh web       # + published on the tailnet (tailscale serve)
 ```
 
 Sanity checks that do not need a GPU:

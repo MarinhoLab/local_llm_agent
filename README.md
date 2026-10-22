@@ -123,6 +123,7 @@ on by default.
 ./opencode_native/run.sh                     # TUI in the current directory
 ./opencode_native/run.sh /path/to/repo       # TUI on a project
 ./opencode_native/run.sh server              # headless API + web UI
+./opencode_native/run.sh web                 # + published on the tailnet
 ./opencode_native/run.sh attach [dir]        # TUI attached to that server
 ```
 

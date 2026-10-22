@@ -103,6 +103,8 @@ your own file. `install.sh` never overwrites an edited copy.
 ```bash
 ./run.sh [dir]         # TUI (default) — mirrors `opencode [project]`
 ./run.sh server        # headless HTTP API + web UI on OPENCODE_SERVER_PORT
+./run.sh web [dir]     # server + published on the tailnet (tailscale serve)
+./run.sh web-off       # undo the tailnet publishing
 ./run.sh attach [dir]  # TUI connected to that server
 ./run.sh run "prompt"  # non-interactive one-shot (model from the profile)
 ./run.sh upgrade       # re-run install.sh
@@ -126,9 +128,38 @@ API         : http://localhost:4096/doc  (basic auth: opencode)
   (see [Permissions](#permissions)).
 - **Re-running `run.sh server` while a server is up** attaches the TUI to the
   existing server instead of failing on the port.
-- Remote access works like the Canvas's: keep the bind on `127.0.0.1` and use
-  an SSH tunnel (`ssh -L 4096:localhost:4096 host`), never a wider bind —
-  with `OPENCODE_AUTO=yes` the server runs shell as you.
+
+### Remote access
+
+Two supported ways to reach the web UI from another machine or your phone.
+Both keep the server on `127.0.0.1` — with `OPENCODE_AUTO=yes` it runs shell
+as you, so treat a wider bind as handing out a shell credential.
+
+1. **`./run.sh web`** — publishes the loopback server on your **tailnet** via
+   `tailscale serve` (Tailscale proxies to `localhost` from inside its own
+   signed process). Any device on your tailnet opens
+   `http://<pc>.<tailnet>.ts.net:4096/` and authenticates with
+   `opencode` / `OPENCODE_SERVER_PASSWORD`. Undo with `./run.sh web-off`.
+   Requires Tailscale installed and **Serve enabled** for the node — if it is
+   not, `run.sh web` says so and still starts the local server, printing the
+   enable URL.
+   Why not just `OPENCODE_BIND_HOST=<tailscale-ip>`? macOS's application
+   firewall silently drops inbound connections to the *ad-hoc-signed* opencode
+   binary on every non-loopback interface, so the bind succeeds but nothing
+   can connect (a signed relay binary reaches it fine, which is how this was
+   diagnosed). Tailscale's process is firewall-allowed, so the proxy path
+   works without touching the firewall. If you'd rather allow-list opencode
+   itself, that's an admin decision:
+   `sudo /usr/libexec/ApplicationFirewall/socketfilterfw --add ~/.opencode/bin/opencode`
+   followed by `--unblockapp` on the same path, then bind `0.0.0.0`.
+2. **SSH tunnel** (no Tailscale needed) — `ssh -L 4096:localhost:4096 host`,
+   then browse `http://localhost:4096` as if local. Same pattern as the vLLM
+   tunnel.
+
+In both cases the web UI's **Add server** dialog wants the URL exactly as the
+browser reaches it (`http://localhost:4096` over a tunnel,
+`http://<pc>.<tailnet>.ts.net:4096` on the tailnet), and phone deep links need
+`NTFY_DEEP_LINK_BASE` set to that same URL (see [Deep links](#deep-links)).
 
 ## Permissions
 

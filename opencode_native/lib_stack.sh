@@ -241,3 +241,47 @@ oc_check_server() {
     *) echo "unreachable"; return 1 ;;
   esac
 }
+
+# --- tailscale (web-UI publishing) ------------------------------------------
+
+# Why this exists: macOS's application firewall drops inbound connections to
+# the ad-hoc-signed opencode binary (codesign flags=0x20002) on every
+# non-loopback interface, so `serve --hostname <tailnet-ip>` binds fine but is
+# unreachable. Tailscale's own signed process is firewall-allowed, so
+# `tailscale serve` can proxy the tailnet to the loopback server instead —
+# no firewall changes, no relay, and still tailnet-only.
+# Echo the Tailscale CLI path, or return 1. The App Store build ships the CLI
+# inside the app bundle rather than on PATH.
+oc_find_tailscale() {
+  if command -v tailscale >/dev/null 2>&1; then
+    command -v tailscale
+    return 0
+  fi
+  local candidate="/Applications/Tailscale.app/Contents/MacOS/Tailscale"
+  [[ -x "${candidate}" ]] && { echo "${candidate}"; return 0; }
+  return 1
+}
+
+# Run the Tailscale CLI bounded by `timeout` when available. The CLI blocks
+# forever when Serve is not enabled in the tailnet ACLs (it prints an enable
+# URL but never exits), so an unbounded call would hang run.sh.
+# Usage: oc_tailscale_cli <cli> [args...]
+oc_tailscale_cli() {
+  local cli="$1"
+  shift
+  if command -v timeout >/dev/null 2>&1; then
+    timeout 15 "${cli}" "$@"
+  elif command -v gtimeout >/dev/null 2>&1; then
+    gtimeout 15 "${cli}" "$@"
+  else
+    # No timeout available: background, poll briefly, and abandon if it hangs.
+    "${cli}" "$@" &
+    local pid=$! waited=0
+    while kill -0 "${pid}" 2>/dev/null && (( waited < 15 )); do
+      sleep 1
+      (( waited += 1 ))
+    done
+    kill -0 "${pid}" 2>/dev/null && kill "${pid}" 2>/dev/null
+    wait "${pid}" 2>/dev/null || true
+  fi
+}

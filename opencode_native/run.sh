@@ -8,6 +8,9 @@
 #   ./run.sh server       `opencode serve` (headless HTTP API + web UI at /).
 #                         Attach later with:
 #                           ./run.sh attach [dir]
+#   ./run.sh web [dir]    server + published on the tailnet via
+#                         `tailscale serve` (README → Remote access).
+#   ./run.sh web-off      remove the tailnet publishing (serve reset).
 #   ./run.sh attach [dir] TUI attached to the running server.
 #   ./run.sh run ARGS...  non-interactive; the model is taken from the profile,
 #                         so `./run.sh run "prompt"` needs no -m. Use
@@ -33,12 +36,12 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "${SCRIPT_DIR}/lib_stack.sh"
 
 usage() {
-  sed -n '3,20p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'
+  sed -n '3,18p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'
 }
 
 MODE="${1:-tui}"
 case "${MODE}" in
-  tui | server | attach | run | upgrade | -h | --help) : ;;
+  tui | server | web | web-off | attach | run | upgrade | -h | --help) : ;;
   *) MODE="tui" ;;  # first arg is a project dir
 esac
 if [[ "${MODE}" != "tui" ]]; then
@@ -180,6 +183,96 @@ do_attach() {
     --username "${OPENCODE_SERVER_USERNAME}"
 }
 
+# Start `opencode serve` (foreground). Shared by `run.sh server` and
+# `run.sh web`; execs or attaches, so it never returns.
+do_server() {
+  local project_dir="$1"
+  # The server runs agents that execute shell as you. Loopback by default;
+  # without basic auth anything on the machine can drive it, so refuse to
+  # start with the placeholder (same policy as agent_canvas_native/run.sh
+  # for its public-mode API key).
+  if [[ -z "${OPENCODE_SERVER_PASSWORD:-}" || "${OPENCODE_SERVER_PASSWORD}" == "REPLACE_ME" ]]; then
+    oc_die "server mode needs a real OPENCODE_SERVER_PASSWORD — it is currently
+       '${OPENCODE_SERVER_PASSWORD:-<empty>}'. Generate one into .env:
+         python3 -c 'import secrets;print(\"OPENCODE_SERVER_PASSWORD=\"+secrets.token_urlsafe(24))' >> ${SCRIPT_DIR}/.env
+       (./install.sh does this when it creates .env), or run the TUI instead:
+         ${SCRIPT_DIR}/run.sh"
+  fi
+  if command -v lsof >/dev/null 2>&1 \
+     && lsof -nP -iTCP:"${OPENCODE_SERVER_PORT}" -sTCP:LISTEN >/dev/null 2>&1; then
+    # Re-running `run.sh server` while a server is already up is the common
+    # case: attach to it rather than dying like a port collision.
+    if [[ "$(oc_check_server)" == "ok" ]]; then
+      echo "a server is already listening on ${OPENCODE_SERVER_PORT} — attaching the TUI to it."
+      do_attach "${project_dir}"
+    fi
+    oc_die "port ${OPENCODE_SERVER_PORT} is already in use by something else.
+  Choose another:  OPENCODE_SERVER_PORT=5000 ./opencode_native/run.sh server
+  (8000 = vLLM tunnel, 8020 = Agent Canvas, 4096 = this stack's default.)"
+  fi
+  maybe_start_notifier
+  echo "web UI      : http://localhost:${OPENCODE_SERVER_PORT}/"
+  echo "API         : http://localhost:${OPENCODE_SERVER_PORT}/doc  (basic auth: ${OPENCODE_SERVER_USERNAME})"
+  echo "attach TUI  : ./opencode_native/run.sh attach [dir]"
+  echo "stop        : Ctrl+C"
+  echo
+  exec "${OPENCODE_BIN}" serve \
+    --port "${OPENCODE_SERVER_PORT}" --hostname "${OPENCODE_BIND_HOST}"
+}
+
+# Publish the loopback server on the tailnet with `tailscale serve`. Runs as a
+# reverse proxy inside Tailscale's own (firewall-allowed, properly signed)
+# process; see oc_find_tailscale in lib_stack.sh for why not --hostname.
+# Non-fatal by design: a missing CLI or a tailnet without Serve must not stop
+# the local server from starting — we print what to fix and continue.
+do_publish_tailnet() {
+  local cli
+  if ! cli="$(oc_find_tailscale)"; then
+    oc_warn "tailscale not found — not publishing the web UI.
+  Install Tailscale (App Store or 'brew install tailscale') and log in,
+  or keep using an SSH tunnel: ssh -L ${OPENCODE_SERVER_PORT}:localhost:${OPENCODE_SERVER_PORT} <host>"
+    return 0
+  fi
+  if ! oc_tailscale_cli "${cli}" ip >/dev/null 2>&1; then
+    oc_warn "Tailscale is not connected — not publishing the web UI. Open the
+  Tailscale app and log in, then re-run: ${SCRIPT_DIR}/run.sh web"
+    return 0
+  fi
+  local out
+  out="$(oc_tailscale_cli "${cli}" serve --bg "http://localhost:${OPENCODE_SERVER_PORT}" 2>&1)"
+  if grep -qi "not enabled" <<<"${out}"; then
+    # The CLI prints an enable URL and then blocks forever, so this branch is
+    # what a bounded call returns when the tailnet's ACLs still lack Serve.
+    local url
+    url="$(grep -Eo 'https://login\.tailscale\.com/f/serve\?node=[A-Za-z0-9]+' <<<"${out}" | head -1)"
+    oc_warn "Tailscale Serve is not enabled for this node — the server runs
+  locally only. Enable it once (tailnet admin):
+    ${url:-https://login.tailscale.com/admin/acls}
+  then re-run: ${SCRIPT_DIR}/run.sh web"
+    return 0
+  fi
+  [[ -n "${out}" ]] && echo "${out}"
+  # MagicDNS name if the tailnet has it, otherwise the 100.x address.
+  local host
+  host="$(oc_tailscale_cli "${cli}" status --json 2>/dev/null \
+    | "${PY:-python3}" -c 'import json,sys; s=(json.load(sys.stdin).get("Self") or {}); print((s.get("DNSName") or s.get("HostName") or "").rstrip("."))' 2>/dev/null)"
+  [[ -n "${host}" ]] || host="$(oc_tailscale_cli "${cli}" ip 2>/dev/null | head -1)"
+  echo "tailnet     : published via tailscale serve — http://${host:-<tailscale-ip>}:${OPENCODE_SERVER_PORT}/"
+  echo "  basic auth: ${OPENCODE_SERVER_USERNAME} / OPENCODE_SERVER_PASSWORD (see .env)"
+  echo "  phone deep links: NTFY_DEEP_LINK_BASE=http://${host:-<pc>}:${OPENCODE_SERVER_PORT}"
+  echo "  stop publishing: ${SCRIPT_DIR}/run.sh web-off"
+  echo "  web UI Add-server URL must be exactly http://${host:-<tailscale-ip>}:${OPENCODE_SERVER_PORT}"
+}
+
+do_unpublish_tailnet() {
+  local cli
+  if ! cli="$(oc_find_tailscale)"; then
+    oc_die "tailscale not found — nothing to unpublish."
+  fi
+  oc_tailscale_cli "${cli}" serve reset
+  echo "tailscale serve config removed — the web UI is loopback-only again."
+}
+
 echo
 echo "OpenCode (native)     : ${OPENCODE_BIN} ($(oc_installed_version))"
 echo "config                : ${OPENCODE_CONFIG_FILE}"
@@ -210,38 +303,19 @@ case "${MODE}" in
     fi
     ;;
 
-  server)
-    # The server runs agents that execute shell as you. Loopback by default;
-    # without basic auth anything on the machine can drive it, so refuse to
-    # start with the placeholder (same policy as agent_canvas_native/run.sh
-    # for its public-mode API key).
-    if [[ -z "${OPENCODE_SERVER_PASSWORD:-}" || "${OPENCODE_SERVER_PASSWORD}" == "REPLACE_ME" ]]; then
-      oc_die "server mode needs a real OPENCODE_SERVER_PASSWORD — it is currently
-       '${OPENCODE_SERVER_PASSWORD:-<empty>}'. Generate one into .env:
-         python3 -c 'import secrets;print(\"OPENCODE_SERVER_PASSWORD=\"+secrets.token_urlsafe(24))' >> ${SCRIPT_DIR}/.env
-       (./install.sh does this when it creates .env), or run the TUI instead:
-         ${SCRIPT_DIR}/run.sh"
+  server | web)
+    # Publish first: do_server execs (or attaches to) the server and never
+    # returns otherwise. tailscale serve proxies tailnet -> loopback, so the
+    # server itself can stay on 127.0.0.1 (README → Remote access explains why
+    # binding the tailnet IP directly does not work on macOS).
+    if [[ "${MODE}" == "web" ]]; then
+      do_publish_tailnet
     fi
-    if command -v lsof >/dev/null 2>&1 \
-       && lsof -nP -iTCP:"${OPENCODE_SERVER_PORT}" -sTCP:LISTEN >/dev/null 2>&1; then
-      # Re-running `run.sh server` while a server is already up is the common
-      # case: attach to it rather than dying like a port collision.
-      if [[ "$(oc_check_server)" == "ok" ]]; then
-        echo "a server is already listening on ${OPENCODE_SERVER_PORT} — attaching the TUI to it."
-        do_attach "${1:-$PWD}"
-      fi
-      oc_die "port ${OPENCODE_SERVER_PORT} is already in use by something else.
-  Choose another:  OPENCODE_SERVER_PORT=5000 ./opencode_native/run.sh server
-  (8000 = vLLM tunnel, 8020 = Agent Canvas, 4096 = this stack's default.)"
-    fi
-    maybe_start_notifier
-    echo "web UI      : http://localhost:${OPENCODE_SERVER_PORT}/"
-    echo "API         : http://localhost:${OPENCODE_SERVER_PORT}/doc  (basic auth: ${OPENCODE_SERVER_USERNAME})"
-    echo "attach TUI  : ./opencode_native/run.sh attach [dir]"
-    echo "stop        : Ctrl+C"
-    echo
-    exec "${OPENCODE_BIN}" serve \
-      --port "${OPENCODE_SERVER_PORT}" --hostname "${OPENCODE_BIND_HOST}"
+    do_server "${1:-$PWD}"
+    ;;
+
+  web-off)
+    do_unpublish_tailnet
     ;;
 
   attach)

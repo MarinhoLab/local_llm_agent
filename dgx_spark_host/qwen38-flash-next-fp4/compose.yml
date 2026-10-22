@@ -1,15 +1,14 @@
 # compose.yml — nvidia/Qwen3.8-Flash-Next-FP4-Local on the DGX Spark.
 #
-# Third DGX-side stack, alongside the two 27B siblings (../qwen38-27b-nvfp4,
-# ../qwen38-27b-bf16). Fully isolated: it runs NVIDIA's community B12X vLLM
-# image rather than vllm/vllm-openai, because upstream vLLM does not yet
-# support this checkpoint's compressed NVFP4 scale factors.
+# Self-contained stack: it runs NVIDIA's community B12X vLLM image rather than
+# vllm/vllm-openai, because upstream vLLM does not yet support this
+# checkpoint's compressed NVFP4 scale factors.
 # Recipe: https://huggingface.co/nvidia/Qwen3.8-Flash-Next-FP4-Local
 #
 # First run downloads ~96 GiB of weights into ./hf-cache.
 #
-# Port 8000 is shared with the other stacks — run only ONE of the three DGX
-# stacks at a time on the Spark.
+# Port 8000 is the shared DGX port — run only ONE DGX stack at a time on the
+# Spark.
 
 services:
   qwen38-flash-next-fp4:

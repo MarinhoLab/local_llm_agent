@@ -22,7 +22,7 @@ the retired client client runs **natively** (no Docker); see
 
 | Stack | Directory | Machine | What it runs | Command |
 |---|---|---|---|---|
-| vLLM server | `dgx_spark_host/qwen38-27b-nvfp4/` (default stack; siblings: `qwen38-27b-bf16/`, `qwen38-flash-next-fp4/`) | NVIDIA DGX Spark (aarch64, GPU) | `nvidia/Qwen3.8-27B-NVFP4` served at `:8000/v1` | `docker compose -f compose.yml up --build` (from the stack folder) |
+| vLLM server | `dgx_spark_host/qwen38-flash-next-fp4/` | NVIDIA DGX Spark (aarch64, GPU) | `nvidia/Qwen3.8-Flash-Next-FP4-Local` served at `:8000/v1` | `docker compose -f compose.yml up --build` (from the stack folder) |
 
 The macOS-side clients reach the model over an **SSH tunnel** (see below).
 There is no Docker compose on the Mac.
@@ -30,16 +30,15 @@ There is no Docker compose on the Mac.
 ## Bringing the stack up
 
 **DGX Spark (server)** — one self-contained stack per model (port 8000, run
-one at a time). The current default is the NVFP4 stack; first run downloads
-~22 GB of weights:
+one at a time). First run downloads ~96 GiB of weights and needs `HF_TOKEN`
+plus NVIDIA Open Model Agreement acceptance in the stack's `.env`:
 
 ```bash
-cd dgx_spark_host/qwen38-27b-nvfp4
+cd dgx_spark_host/qwen38-flash-next-fp4
 docker compose -f compose.yml up --build
 ```
 
-(Siblings: `qwen38-27b-bf16/` for the official BF16 checkpoint, and
-`qwen38-flash-next-fp4/` for the 125B Flash Next checkpoint — see
+(Adding another checkpoint means copying this stack folder — see
 `dgx_spark_host/README.md`.)
 
 The API is available at `http://localhost:8000/v1` on the Spark.
@@ -70,8 +69,7 @@ deliberate:
   **NVIDIA Container Toolkit** on the Spark. If the container starts but the
   log shows no GPU / vLLM OOMs, the toolkit is missing or not on the PATH.
 - **`HF_CACHE:-./hf-cache:/root/.cache/huggingface`** persists downloaded weights
-  across runs. Do not delete it or the next start re-downloads ~22 GB (~96 GiB
-  in the Flash Next stack).
+  across runs. Do not delete it or the next start re-downloads ~96 GiB.
 - In every stack, all runtime defaults live as `ENV` in the stack's
   `Dockerfile`; its `entrypoint.sh` composes the `vllm serve` command from
   those variables, and the stack's optional `.env` reaches the container via
@@ -81,16 +79,14 @@ deliberate:
 ## Everyday container operations
 
 ```bash
-# vLLM server (DGX Spark) — default stack; for the others use
-# qwen38-27b-bf16/ (dgx-qwen-bf16-vllm) or
-# qwen38-flash-next-fp4/ (dgx-qwen38-flash-next-fp4)
-docker compose -f dgx_spark_host/qwen38-27b-nvfp4/compose.yml logs -f --tail=200
-docker compose -f dgx_spark_host/qwen38-27b-nvfp4/compose.yml ps
-docker compose -f dgx_spark_host/qwen38-27b-nvfp4/compose.yml down      # stop, keep volumes
-docker compose -f dgx_spark_host/qwen38-27b-nvfp4/compose.yml down -v   # also remove volumes
+# vLLM server (DGX Spark) — container dgx-qwen38-flash-next-fp4
+docker compose -f dgx_spark_host/qwen38-flash-next-fp4/compose.yml logs -f --tail=200
+docker compose -f dgx_spark_host/qwen38-flash-next-fp4/compose.yml ps
+docker compose -f dgx_spark_host/qwen38-flash-next-fp4/compose.yml down      # stop, keep volumes
+docker compose -f dgx_spark_host/qwen38-flash-next-fp4/compose.yml down -v   # also remove volumes
 
 # One-off shell / exec into a running container
-docker exec -it dgx-qwen-nvfp4-vllm bash
+docker exec -it dgx-qwen38-flash-next-fp4 bash
 ```
 
 ## `.env` and secrets (do not leak)

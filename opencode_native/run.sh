@@ -252,16 +252,24 @@ do_publish_tailnet() {
     return 0
   fi
   [[ -n "${out}" ]] && echo "${out}"
-  # MagicDNS name if the tailnet has it, otherwise the 100.x address.
-  local host
-  host="$(oc_tailscale_cli "${cli}" status --json 2>/dev/null \
-    | "${PY:-python3}" -c 'import json,sys; s=(json.load(sys.stdin).get("Self") or {}); print((s.get("DNSName") or s.get("HostName") or "").rstrip("."))' 2>/dev/null)"
-  [[ -n "${host}" ]] || host="$(oc_tailscale_cli "${cli}" ip 2>/dev/null | head -1)"
-  echo "tailnet     : published via tailscale serve — http://${host:-<tailscale-ip>}:${OPENCODE_SERVER_PORT}/"
+  # `serve --bg <loopback-url>` publishes under Tailscale's own TLS on :443
+  # (it prints "https://<node>/ |-- proxy http://localhost:<port>"), so the
+  # client-facing URL comes from that output, not from the port we proxy to.
+  # MagicDNS name if present, otherwise the 100.x address, as fallbacks.
+  local host url
+  url="$(grep -Eo 'https?://[A-Za-z0-9._-]+/?' <<<"${out}" | grep -v localhost | head -1)"
+  url="${url%/}"
+  if [[ -z "${url}" ]]; then
+    host="$(oc_tailscale_cli "${cli}" status --json 2>/dev/null \
+      | "${PY:-python3}" -c 'import json,sys; s=(json.load(sys.stdin).get("Self") or {}); print((s.get("DNSName") or s.get("HostName") or "").rstrip("."))' 2>/dev/null)"
+    [[ -n "${host}" ]] || host="$(oc_tailscale_cli "${cli}" ip 2>/dev/null | head -1)"
+    url="http://${host:-<tailscale-ip>}:${OPENCODE_SERVER_PORT}"
+  fi
+  echo "tailnet     : published via tailscale serve — ${url}/"
   echo "  basic auth: ${OPENCODE_SERVER_USERNAME} / OPENCODE_SERVER_PASSWORD (see .env)"
-  echo "  phone deep links: NTFY_DEEP_LINK_BASE=http://${host:-<pc>}:${OPENCODE_SERVER_PORT}"
+  echo "  phone deep links: NTFY_DEEP_LINK_BASE=${url}"
   echo "  stop publishing: ${SCRIPT_DIR}/run.sh web-off"
-  echo "  web UI Add-server URL must be exactly http://${host:-<tailscale-ip>}:${OPENCODE_SERVER_PORT}"
+  echo "  web UI Add-server URL must be exactly ${url}"
 }
 
 do_unpublish_tailnet() {

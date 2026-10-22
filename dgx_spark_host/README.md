@@ -1,17 +1,24 @@
 # DGX Spark host stacks
 
-One self-contained stack per model — each folder has its own `Dockerfile`,
-`entrypoint.sh`, `compose.yml`, and `README.md`, and they share no code or
-parameters. All bind port 8000; run only ONE at a time on the Spark.
+One self-contained stack per model — each folder holds its own `Dockerfile`,
+`entrypoint.sh`, `compose.yml`, and `README.md`, and stacks share no code or
+parameters. All bind port 8000, so run only ONE at a time on the Spark.
+
+## The stack
 
 | Stack | Serves | Run | Served alias |
 |---|---|---|---|
-| [`qwen38-27b-nvfp4/`](qwen38-27b-nvfp4/) | `nvidia/Qwen3.8-27B-NVFP4` (NVFP4+FP8, ~22 GB) — the current default | `cd qwen38-27b-nvfp4 && docker compose up --build` | `qwen-local` |
-| [`qwen38-27b-bf16/`](qwen38-27b-bf16/) | `Qwen/Qwen3.8-27B` (official BF16, ~55 GB) | `cd qwen38-27b-bf16 && docker compose up --build` | `qwen-local` |
 | [`qwen38-flash-next-fp4/`](qwen38-flash-next-fp4/) | `nvidia/Qwen3.8-Flash-Next-FP4-Local` (QAD NVFP4/MXFP8 of the 125B MoE `Qwen3.8-Flash-Next`, ~96 GiB) on the B12X image | `cd qwen38-flash-next-fp4 && docker compose up --build` | `qwen-local` |
 
-Each stack's README documents its env vars, defaults, and tuning notes.
-The macOS-side clients (Agent Canvas or OpenCode — see
-`../agent_canvas_native/` and `../opencode_native/`) reach the running stack
-over the SSH tunnel on port 8000 and use the served alias — `qwen-local`, which
-all three stacks serve, so the client configuration never changes.
+The stack's README documents its env vars, defaults, and tuning notes. The
+macOS-side clients (Agent Canvas or OpenCode — see `../agent_canvas_native/`
+and `../opencode_native/`) reach the running stack over the SSH tunnel on port
+8000 and use the served alias — `qwen-local`, so the client configuration
+never changes.
+
+## Adding another model
+
+Copy an existing stack folder and adjust its `MODEL_NAME`,
+`GPU_MEMORY_UTILIZATION` and README: the layout is deliberately duplicated
+rather than shared, so a new checkpoint never perturbs the tuned values of
+another one. Stop the running stack first — every stack binds port 8000.

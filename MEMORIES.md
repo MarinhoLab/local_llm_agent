@@ -19,6 +19,13 @@
 > Earlier entries that mention OpenCode, `OPENCODE_MODEL_ID`, or files under
 > `opencode_client/` are kept as history and no longer describe anything in
 > the repo.
+>
+> **Note (2026-10): the two 27B DGX stacks — `dgx_spark_host/qwen38-27b-nvfp4/`
+> and `dgx_spark_host/qwen38-27b-bf16/` — have been removed as unused.**
+> `dgx_spark_host/qwen38-flash-next-fp4/` is the only remaining DGX-side stack.
+> Entries below that describe the "three sibling stacks", their per-stack
+> `MAX_NUM_SEQS`/`GPU_MEMORY_UTILIZATION` values, or their container names are
+> kept as history and no longer describe anything in the repo.
 
 A persistent, append-friendly record of **what we tried, what worked, and why**
 for this repo. New findings are appended to

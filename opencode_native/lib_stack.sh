@@ -5,7 +5,7 @@
 # Holds the pieces both scripts must agree on exactly: where the stack's state
 # lives, how .env is loaded without letting it clobber caller-set variables,
 # the environment exported to the opencode binary, and the endpoint/model
-# checks. Mirrors the conventions of agent_canvas_native/{install,run}.sh.
+# checks.
 #
 # Everything is functions plus the two module-level constants below; nothing
 # here runs at source time except defining them.
@@ -58,8 +58,8 @@ oc_resolve_paths() {
 # --- .env -------------------------------------------------------------------
 
 # Source .env without letting it override what the caller set on the command
-# line (`OPENCODE_SERVER_PORT=5000 ./run.sh server` must win), the same
-# snapshot/restore trick agent_canvas_native/run.sh uses. Values are exported
+# line (`OPENCODE_SERVER_PORT=5000 ./run.sh server` must win), via the
+# snapshot/restore trick below. Values are exported
 # because the opencode process inherits them.
 oc_load_env() {
   local env_file="${SCRIPT_DIR}/.env"

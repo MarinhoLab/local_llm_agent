@@ -6,7 +6,7 @@ description: >-
   how to read them, and safe, fast patterns for mining/processing them without
   leaking secrets or melting the machine.
 license: MIT
-compatibility: "Agent Canvas runtime state (native stack: `~/.openhands` + `agent_canvas_native/openhands-state/`)"
+compatibility: "OpenHands Agent Canvas runtime state (`~/.openhands` + the stack's `openhands-state/` dir) — historical reference"
 triggers:
   - conversations
   - conversation history
@@ -16,12 +16,17 @@ triggers:
   - where are conversations
 ---
 
+> **Note (2026-10):** the Agent Canvas macOS-side stack has been removed from
+> this repository — `opencode_native/` is the only supported client. This
+> skill is kept as a **historical reference** for reading conversation data
+> left behind by that stack (or by an OpenHands sandbox deployment).
+
 OpenHands conversation data lives in the Agent Canvas **state**. Where that
 is depends on the runtime: the OpenHands **sandbox** keeps it under
-`/home/openhands/.openhands/agent-canvas/`, while this repo's **native stack**
-keeps runtime data in `agent_canvas_native/openhands-state/` (only the API and
-encryption keys live in `~/.openhands/agent-canvas/`). There are **two on-disk
-formats** to be aware of.
+`/home/openhands/.openhands/agent-canvas/`, while the repo's former
+**native stack** kept runtime data in its `openhands-state/` dir (only the API
+and encryption keys lived in `~/.openhands/agent-canvas/`). There are **two
+on-disk formats** to be aware of.
 
 ## Where things are
 
@@ -31,7 +36,7 @@ formats** to be aware of.
 | `/home/openhands/.openhands/agent-canvas/bash_events/` (sandbox) or `<state>/bash_events/` (native stack) | Flat directory, one JSON file per bash command/output | A global, timestamp-prefixed dump of all terminal traffic across conversations. |
 
 `<state>` is `$OH_PERSISTENCE_DIR/openhands-state` when set, else
-`agent_canvas_native/openhands-state` (the `run.sh` default,
+the native stack's `openhands-state` (its `run.sh` default,
 `AGENT_CANVAS_STATE`).
 
 > **Path caveat (important).** The sandbox paths are under the sandbox user's

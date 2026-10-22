@@ -1,28 +1,14 @@
 # Native OpenCode (no Docker)
 
 [OpenCode](https://opencode.ai) is a terminal coding agent (TUI + web UI +
-HTTP API). This folder runs it **natively** as the alternative macOS-side
-client to [`../agent_canvas_native/`](../agent_canvas_native/): same DGX
-Spark vLLM endpoint, same SSH tunnel, same ntfy notifications — a different
-front end. There is **no Docker** involved and **no Node.js required**
-(opencode ships as a single self-contained binary).
+HTTP API). This folder runs it **natively** as this repo's macOS-side
+client: it drives the DGX Spark vLLM endpoint over the SSH tunnel, with
+ntfy notifications. There is **no Docker** involved and **no Node.js
+required** (opencode ships as a single self-contained binary).
 
-Agents run as **your user on the local filesystem** — same caveat as the
-Canvas stack: there is no sandbox, so the edit/shell approval prompt is the
+Agents run as **your user on the local filesystem** —
+there is no sandbox, so the edit/shell approval prompt is the
 safety net (kept on by default, see [Permissions](#permissions)).
-
-## Why this exists next to Agent Canvas
-
-| | `agent_canvas_native/` | `opencode_native/` |
-|---|---|---|
-| Front end | Web UI (browser) + REST API | TUI (terminal), plus web UI + REST API in server mode |
-| Runtime | Node.js ≥ 22.12 + uv + Python 3.14 | one binary (`~/.opencode/bin/opencode`) |
-| Model config | Settings → LLM in the UI | generated `opencode.json` (no provider UI exists) |
-| State | `openhands-state/` + `~/.openhands` | fully inside `opencode-state/` (XDG-isolated) |
-| Notifications | `ntfy_notifier.py` (agent-server API) | `ntfy_notifier.py` (opencode server API) |
-
-Both point at `http://localhost:8000/v1` serving `qwen-local`, so you can run
-either without touching the DGX side.
 
 ## What's here
 
@@ -59,7 +45,7 @@ or iTerm2 (`run.sh server` works anywhere).
 ## Quick start
 
 ```bash
-# 0. tunnel to the DGX (same one the Canvas uses)
+# 0. tunnel to the DGX
 ssh -N -L 8000:localhost:8000 USER@DGX_SPARK_IP
 
 # 1. one-time setup (safe to re-run — it upgrades the binary)
@@ -77,14 +63,14 @@ tunnel is up.
 
 ## Pointing it at your vLLM
 
-Unlike the Canvas, OpenCode has **no UI for adding a provider** — the profile
+OpenCode has **no UI for adding a provider** — the profile
 lives in a config file, which `install.sh` generates from
 `opencode.example.jsonc`:
 
 - provider `dgx-vllm` → `@ai-sdk/openai-compatible` against
   `{env:OPENCODE_DGX_BASE_URL}` / `{env:OPENCODE_DGX_API_KEY}`, which `run.sh`
   exports from `VLLM_BASE_URL` / `VLLM_API_KEY` in `.env` — the same two knobs
-  `agent_canvas_native/example.env` uses;
+  `example.env` defines;
 - model `dgx-vllm/qwen-local` (also used as `small_model`, since the DGX
   serves one model), declared `reasoning` + `tool_call` with
   `limit.context: 262144` to match the checkpoint (see `../AGENTS.md`);
@@ -164,7 +150,7 @@ browser reaches it (`http://localhost:4096` over a tunnel,
 ## Permissions
 
 Agents edit files and run shell **as you**, so approvals are on by default
-(`ask` before `edit`/`shell`, mirroring the Canvas's confirmation flow).
+(`ask` before `edit`/`shell`).
 `OPENCODE_AUTO=yes` in `.env` switches to auto-approve — `run.sh` then passes
 `--auto` to the TUI/`run`, and exports `OPENCODE_PERMISSION` (the JSON
 `serve`/`attach` have no `--auto` flag, so the env override is what makes
@@ -205,8 +191,7 @@ Uninstall: `rm -rf ./opencode-state` plus `rm ~/.opencode/bin/opencode`
 
 ## Notifications (ntfy)
 
-Same design as [`../agent_canvas_native/`](../agent_canvas_native/README.md):
-one stdlib-only daemon per PC, publishing to the local ntfy server from
+One stdlib-only daemon per PC, publishing to the local ntfy server from
 [`../ntfy/`](../ntfy/). It polls the **opencode server** every
 `NTFY_POLL_SECONDS` and publishes on status transitions. Run it in
 **server mode** — the TUI spawns a private server on a random port, which the
@@ -285,7 +270,7 @@ escape hatch — a literal prefix with the session id appended, used instead of
 
 ## Working with your files
 
-Like the Canvas, this stack has **no container sandbox**: the agent edits the
+This stack has **no container sandbox**: the agent edits the
 checkout you launch it in, as you. Use it on a git repository (opencode
 snapshots changes with git and can undo a turn), and keep the default `ask`
 permissions unless the tree is disposable. `OPENCODE_DISABLE_AUTO_SHARE=true`
@@ -301,7 +286,7 @@ permissions unless the tree is disposable. `OPENCODE_DISABLE_AUTO_SHARE=true`
 | `... does not serve 'qwen-local'` | Wrong stack or wrong alias. Check `curl -H 'Authorization: Bearer local-dgx-key' http://localhost:8000/v1/models` and fix `VLLM_MODEL_ID` in `.env`. |
 | TUI looks broken / no colours | `TERM=dumb` (e.g. from a script or tmux misconfig). Use a modern terminal emulator; `run.sh server` + web UI works regardless. |
 | `server mode needs a real OPENCODE_SERVER_PASSWORD` | `run.sh` refuses to bind a shell-capable port unauthenticated. Re-run `install.sh` on a fresh `.env`, or: `python3 -c 'import secrets;print("OPENCODE_SERVER_PASSWORD="+secrets.token_urlsafe(24))' >> opencode_native/.env` |
-| `port 4096 is already in use by something else` | Not this stack's server (that case attaches). Move it: `OPENCODE_SERVER_PORT=5000 ./opencode_native/run.sh server`. Taken: 8000 (vLLM), 8020 (Canvas), 18000/18001 (Canvas internals), 2020 (ntfy). |
+| `port 4096 is already in use by something else` | Not this stack's server (that case attaches). Move it: `OPENCODE_SERVER_PORT=5000 ./opencode_native/run.sh server`. Taken: 8000 (vLLM), 2020 (ntfy). |
 | Web UI asks for a server address / “Could not connect to server” | Expected on first use: enter `http://localhost:4096`, then the basic-auth password. If it fails, the server isn't running or the port differs. |
 | `attach` says no server answering | Start one in another terminal: `./opencode_native/run.sh server`. `attach` needs the server on `OPENCODE_SERVER_PORT`, with `--password` matching `.env` (both are handled for you when you go through `run.sh`). |
 | Notifications never arrive | The notifier only watches **server mode**. Check `opencode-state/logs/ntfy.log`: `waiting for the opencode server` → server down; `publish failed HTTP 401/403` → `NTFY_AUTH_TOKEN` wrong (only with account auth); nothing logged → `NTFY_ENABLED` isn't `true`. |

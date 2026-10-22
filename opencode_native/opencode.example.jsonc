@@ -30,7 +30,7 @@
       "name": "DGX Spark vLLM (local)",
       "options": {
         // run.sh exports these from .env (VLLM_BASE_URL / VLLM_API_KEY), the
-        // same two knobs agent_canvas_native/example.env uses. An unset
+        // same two knobs example.env defines. An unset
         // variable substitutes to an empty string, so always launch through
         // run.sh rather than calling opencode directly.
         "baseURL": "{env:OPENCODE_DGX_BASE_URL}",

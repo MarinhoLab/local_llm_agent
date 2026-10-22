@@ -8,6 +8,10 @@ dgx_spark_host/*/.triton/
 # agent_canvas_native runtime data (kept on the host, never committed)
 agent_canvas_native/openhands-state/
 
+# opencode_native runtime data: generated config, sessions (opencode.db),
+# XDG-isolated data/cache, notifier state (kept on the host, never committed)
+opencode_native/opencode-state/
+
 # ntfy server config & data (per-PC push server, see ntfy/)
 ntfy/.env
 

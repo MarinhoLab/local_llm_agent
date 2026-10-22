@@ -9,6 +9,10 @@ There is **no Docker** involved.
 This is the npm-based install path documented at
 [OpenHands · Running Agent Canvas](https://docs.openhands.dev/openhands/usage/agent-canvas/setup).
 
+The alternative macOS-side client is [`../opencode_native/`](../opencode_native/)
+— same DGX endpoint, tunnel and ntfy server, a terminal agent instead of a web
+UI. Both can be installed side by side; they share no state.
+
 ## What's here
 
 ```

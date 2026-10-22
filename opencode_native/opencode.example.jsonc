@@ -1,0 +1,69 @@
+{
+  // opencode_native/opencode.example.jsonc — OpenCode configuration template.
+  //
+  // install.sh copies this file to <this folder>/config/opencode.json
+  // (chmod 600); run.sh points OpenCode at that copy with OPENCODE_CONFIG, so
+  // the stack never writes to your global ~/.config/opencode. Edit the copy
+  // (or set OPENCODE_CONFIG in .env to your own file), not this template.
+  //
+  // Nothing secret lives here: the endpoint and key are substituted from the
+  // environment ({env:...}) that run.sh exports from .env — see
+  // provider.dgx-vllm.options below.
+  "$schema": "https://opencode.ai/config.json",
+
+  // A pinned install must not self-upgrade behind install.sh's back
+  // (run.sh sets OPENCODE_DISABLE_AUTOUPDATE too).
+  "autoupdate": false,
+
+  // "<provider-id>/<model-id>"; both keys are defined below. Override per call
+  // with `opencode run -m dgx-vllm/qwen-local ...` or per project with an
+  // opencode.json in that project's root.
+  "model": "dgx-vllm/qwen-local",
+  // OpenCode uses small_model for cheap side tasks (titles, summaries). The
+  // DGX serves one model, so point it at the same one.
+  "small_model": "dgx-vllm/qwen-local",
+
+  "provider": {
+    "dgx-vllm": {
+      // The AI SDK adapter for anything speaking /v1/chat/completions.
+      "npm": "@ai-sdk/openai-compatible",
+      "name": "DGX Spark vLLM (local)",
+      "options": {
+        // run.sh exports these from .env (VLLM_BASE_URL / VLLM_API_KEY), the
+        // same two knobs agent_canvas_native/example.env uses. An unset
+        // variable substitutes to an empty string, so always launch through
+        // run.sh rather than calling opencode directly.
+        "baseURL": "{env:OPENCODE_DGX_BASE_URL}",
+        "apiKey": "{env:OPENCODE_DGX_API_KEY}",
+        // Long agent turns on a local 27B model: no overall request cap, and
+        // no stall abort while the model thinks or runs a slow tool.
+        "timeout": false,
+        "headerTimeout": false,
+        "chunkTimeout": false
+      },
+      "models": {
+        // The key must be the id vLLM serves — all three dgx_spark_host/
+        // stacks alias it to `qwen-local`.
+        "qwen-local": {
+          "name": "Qwen3.8 on DGX Spark (qwen-local)",
+          "reasoning": true,
+          "tool_call": true,
+          // OpenCode tracks the remaining window from these; models.dev has no
+          // entry for a private vLLM alias. 262144 is the checkpoint's native
+          // max (see the Context bullet in ../AGENTS.md); the 16384 output cap
+          // leaves room for the prompt. Adjust if a stack changes MAX_MODEL_LEN.
+          "limit": { "context": 262144, "output": 16384 }
+        }
+      }
+    }
+  },
+
+  // Agents run as you, with real filesystem access. Ask before editing files
+  // or running shell commands. run.sh flips these to "allow" when
+  // OPENCODE_AUTO=yes (through OPENCODE_PERMISSION), which is what
+  // `opencode run --auto` does.
+  "permission": {
+    "edit": "ask",
+    "shell": "ask"
+  }
+}

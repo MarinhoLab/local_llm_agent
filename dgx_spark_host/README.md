@@ -11,9 +11,10 @@ parameters. All bind port 8000, so run only ONE at a time on the Spark.
 | [`qwen38-flash-next-fp4/`](qwen38-flash-next-fp4/) | `nvidia/Qwen3.8-Flash-Next-FP4-Local` (QAD NVFP4/MXFP8 of the 125B MoE `Qwen3.8-Flash-Next`, ~96 GiB) on the B12X image | `cd qwen38-flash-next-fp4 && docker compose up --build` | `qwen-local` |
 
 The stack's README documents its env vars, defaults, and tuning notes. The
-macOS-side client (the retired client) reaches the running stack over the SSH tunnel
-on port 8000 and uses the served alias — `qwen-local`, so the client
-configuration never changes.
+macOS-side clients (the retired client or OpenCode — see `../retired-stack/`
+and `../opencode_native/`) reach the running stack over the SSH tunnel on port
+8000 and use the served alias — `qwen-local`, so the client configuration
+never changes.
 
 ## Adding another model
 

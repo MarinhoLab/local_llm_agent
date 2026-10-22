@@ -2,9 +2,9 @@
 #
 # install.sh — one-time setup for the *native* OpenCode stack (no Docker).
 #
-# OpenCode (https://opencode.ai/docs/) is a terminal coding agent, here as the
-# alternative macOS-side client to agent_canvas_native/. Both drive the same
-# vLLM endpoint over the same SSH tunnel.
+# OpenCode (https://opencode.ai/docs/) is a terminal coding agent, here as
+# this repo's macOS-side client. It drives the vLLM endpoint over the SSH
+# tunnel.
 #
 # Steps:
 #   1. verify prerequisites: bash, curl, git (opencode itself needs no
@@ -97,7 +97,7 @@ install_via_npm() {
     return 0
   fi
   # Global prefix not writable (common on managed Macs): fall back to a
-  # per-user prefix rather than sudo, like agent_canvas_native/install.sh.
+  # per-user prefix rather than sudo.
   oc_warn "npm install -g ${pkg} failed (prefix not writable) — retrying with ~/.npm-global"
   npm config set prefix "${HOME}/.npm-global" >/dev/null 2>&1 || true
   export PATH="${HOME}/.npm-global/bin:${PATH}"

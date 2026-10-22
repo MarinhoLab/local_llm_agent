@@ -1,5 +1,11 @@
 # MEMORIES.md
 
+> **Note (2026-10): the `agent_canvas_native/` stack has been removed.**
+> `opencode_native/` (OpenCode) is now the only supported macOS-side client.
+> Entries below that describe the Agent Canvas launcher, its ports, its LLM
+> profile settings, or files under `agent_canvas_native/` are kept as history
+> and no longer describe anything in the repo.
+
 > **Note (2026-09): the `macos_client/` stack — and with it the `oh-bootstrap`
 > sidecar, the `duckduckgo-mcp` service, and `example.env` — has been removed
 > from this repository.** Most of the plan and log below describes that now-

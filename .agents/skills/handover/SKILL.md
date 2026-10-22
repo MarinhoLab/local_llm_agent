@@ -21,6 +21,11 @@ triggers:
 
 # Context-window handover
 
+> **Note (2026-10):** the Agent Canvas macOS-side stack has been removed from
+> this repository — `opencode_native/` is the only supported client. This
+> skill is kept as a **historical reference** and applies only when working
+> against a surviving Agent Canvas deployment (agent-server + its state).
+
 When the full context of the current conversation reaches **90%** of the model's
 context window, the agent hands the task over to a fresh follow-up conversation
 instead of degrading in place. The follow-up agent continues the same task with

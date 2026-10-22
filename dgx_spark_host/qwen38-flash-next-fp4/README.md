@@ -100,6 +100,6 @@ override via this folder's `.env` (passed into the container by `compose.yml`'s
 
 ## Clients
 
-The Agent Canvas client keys off the served model alias, and this stack uses the
-**`qwen-local`** alias, so clients need no changes (see `../README.md` for the
-Agent Canvas LLM-profile example).
+The OpenCode client keys off the served model alias, and this stack uses the
+**`qwen-local`** alias, so clients need no changes (see `../opencode_native/`
+for the generated provider config).

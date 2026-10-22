@@ -5,8 +5,20 @@ context/
 dgx_spark_host/*/*cache/
 dgx_spark_host/*/.triton/
 
-# agent_canvas_native runtime data (kept on the host, never committed)
+# agent_canvas_native runtime data (kept on the host, never committed). Beyond
+# the state dir, this covers the settings/secrets/profiles the launcher writes
+# next to run.sh (they belong in ~/.openhands — see agent_canvas_native/README.md),
+# ignored so secrets.json / settings.json can never be committed by accident.
 agent_canvas_native/openhands-state/
+agent_canvas_native/secrets.json
+agent_canvas_native/settings.json
+agent_canvas_native/.secrets.lock
+agent_canvas_native/.settings.lock
+agent_canvas_native/profiles/
+agent_canvas_native/agent-profiles/
+agent_canvas_native/provider-connections/
+agent_canvas_native/automation/
+agent_canvas_native/cache/
 
 # opencode_native runtime data: generated config, sessions (opencode.db),
 # XDG-isolated data/cache, notifier state (kept on the host, never committed)
@@ -20,3 +32,11 @@ __pycache__/
 
 # Long-task logs and transient artifacts
 artifacts/logs/
+
+# macOS / editor noise
+.DS_Store
+.idea/
+
+# Retired Docker-based Canvas stack (removed 2026-09, superseded by
+# agent_canvas_native/); ignore any leftover working-tree copies
+agent_canvas/

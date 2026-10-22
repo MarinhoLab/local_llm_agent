@@ -5,6 +5,8 @@ context/
 dgx_spark_host/*/*cache/
 dgx_spark_host/*/.triton/
 
+# the state dir, this covers the settings/secrets/profiles the launcher writes
+# ignored so secrets.json / settings.json can never be committed by accident.
 
 # opencode_native runtime data: generated config, sessions (opencode.db),
 # XDG-isolated data/cache, notifier state (kept on the host, never committed)
@@ -18,3 +20,9 @@ __pycache__/
 
 # Long-task logs and transient artifacts
 artifacts/logs/
+
+# macOS / editor noise
+.DS_Store
+.idea/
+
+# Retired Docker-based Canvas stack (removed 2026-09, superseded by

@@ -17,8 +17,8 @@ triggers:
 ---
 
 This repository has **one Docker stack** — the DGX Spark vLLM server. The
-the retired client client runs **natively** (no Docker); see
-`retired-stack/`.
+OpenCode client runs **natively** (no Docker); see
+`opencode_native/`.
 
 | Stack | Directory | Machine | What it runs | Command |
 |---|---|---|---|---|
@@ -54,7 +54,7 @@ ssh -L 8000:localhost:8000 USER@DGX_SPARK_IP
 
 - Each `dgx_spark_host/<stack>/compose.yml` publishes `8000:8000`; the tunnel
   maps that onto the Mac's `localhost:8000`.
-- The native the retired client stack (`retired-stack`) targets
+- The native OpenCode stack (`opencode_native/`) targets
   `http://localhost:8000/v1` on the Mac, which resolves through the
   tunnel to the Spark.
 - If the server is restarted or the tunnel drops, model calls fail with

@@ -7,9 +7,8 @@ interest: a turn finished (idle), a permission/question prompt is waiting for
 you, the model errored, or a request is stuck in the retry loop.
 
 It is dependency-free (Python stdlib only) so it runs on any PC next to
-OpenCode without a venv. The the retired client counterpart is
-../retired-stack/ntfy_notifier.py; this one speaks to opencode's API
-instead of the the retired client retired-server, and derives the statuses opencode does
+OpenCode without a venv. It speaks to opencode's HTTP API
+and derives the statuses opencode does
 not expose directly (finished vs. error, needs-input) from the primitives it
 does: /session/status, /permission, /question and the last assistant message.
 

@@ -5,10 +5,10 @@ Guidance for AI agents (and humans) working in this repository.
 ## Project overview
 
 `local_llm_agent` runs a Qwen model on an **NVIDIA DGX Spark** (GB10, 128 GB unified memory, aarch64) via vLLM, and drives it from **macOS**
-over an SSH tunnel with one of two native clients: **the retired client the retired client**
-(`retired-stack/`) or **OpenCode** (`opencode_native/`). The DGX side has one self-contained stack per model under `dgx_spark_host/`, all on port 8000 (run one at a time); the currently served model is **`qwen38-flash-next-fp4`**, serving [`nvidia/Qwen3.8-Flash-Next-FP4-Local`](https://huggingface.co/nvidia/Qwen3.8-Flash-Next-FP4-Local) (NVIDIA's QAD NVFP4/MXFP8 quantization of the 125B MoE `Qwen/Qwen3.8-Flash-Next`, ~96 GiB, on the community B12X vLLM image) under the alias `qwen-local`. Earlier 27B stacks (`qwen38-27b-nvfp4`, `qwen38-27b-bf16`) have been removed. Stacks are fully isolated — own image, compose, entrypoint, and defaults; they share no code or parameters.
+over an SSH tunnel with the native **OpenCode** client (`opencode_native/`).
+The DGX side has one self-contained stack per model under `dgx_spark_host/`, all on port 8000 (run one at a time); the currently served model is **`qwen38-flash-next-fp4`**, serving [`nvidia/Qwen3.8-Flash-Next-FP4-Local`](https://huggingface.co/nvidia/Qwen3.8-Flash-Next-FP4-Local) (NVIDIA's QAD NVFP4/MXFP8 quantization of the 125B MoE `Qwen/Qwen3.8-Flash-Next`, ~96 GiB, on the community B12X vLLM image) under the alias `qwen-local`. Earlier 27B stacks (`qwen38-27b-nvfp4`, `qwen38-27b-bf16`) have been removed. Stacks are fully isolated — own image, compose, entrypoint, and defaults; they share no code or parameters.
 
-One serving stack, two client stacks, plus a notification sidecar:
+One serving stack, one client stack, plus a notification sidecar:
 
 - `dgx_spark_host/` — the DGX Spark side, **one self-contained stack per
   model**, each with its own `Dockerfile` (holding all `ENV` defaults),
@@ -17,15 +17,11 @@ One serving stack, two client stacks, plus a notification sidecar:
   - `qwen38-flash-next-fp4/` — `nvidia/Qwen3.8-Flash-Next-FP4-Local` (QAD
     NVFP4/MXFP8 of the 125B MoE `Qwen3.8-Flash-Next`, ~96 GiB) on the B12X
     image, served as `qwen-local`.
-- `retired-stack/` — [the retired client](https://docs.the retired client.dev/the retired client/usage/retired-stack/setup)
-  (UI + retired-server + automation server + ingress) running as local processes via
-  Node.js ≥ 22.12 and `uv`, with **no Docker**; also reaches vLLM through the
-  tunnel; UI at `http://localhost:8020`. Agents run as your user on the local
-  filesystem. See `retired-stack/README.md` for ports and overrides.
-- `opencode_native/` — [OpenCode](https://opencode.ai) as the alternative
-  macOS-side client: a terminal coding agent shipped as one self-contained
+- `opencode_native/` — [OpenCode](https://opencode.ai), the macOS-side
+  client: a terminal coding agent shipped as one self-contained
   binary (**no Docker, no Node.js**; npm is only used if you install OpenCode
-  *plugins*). Same vLLM endpoint, tunnel and ntfy server as the Canvas.
+  *plugins*). It reaches the vLLM endpoint through the same SSH tunnel and
+  uses the same ntfy server.
   `install.sh` installs the binary and generates
   `opencode-state/config/opencode.json` — OpenCode has no provider UI, and the
   endpoint/key are `{env:...}`-substituted from `.env`, so launches must go
@@ -43,8 +39,7 @@ One serving stack, two client stacks, plus a notification sidecar:
   port `2020`). With `NTFY_ENABLED=true` in a stack's `.env`, that stack's
   `run.sh` also starts its `ntfy_notifier.py`, a stdlib-only daemon that polls
   the local agent process and pushes phone notifications on status transitions
-  (Canvas: finished / idle = needs input / waiting_for_confirmation / error /
-  stuck; OpenCode: finished / waiting_for_input / error / retrying). Designed
+  (OpenCode: finished / waiting_for_input / error / retrying). Designed
   for multiple PCs on Tailscale, each running its own server + notifier. See
   `ntfy/README.md` and the stack's README → *Notifications (ntfy)*.
 
@@ -116,40 +111,6 @@ One serving stack, two client stacks, plus a notification sidecar:
   default: set `YARN_FACTOR` (e.g. `2.0` for 524288, `4.0` for ~1M) **and**
   raise `MAX_MODEL_LEN` to match in the stack's `.env` — static YaRN can hurt
   short-prompt quality, so it ships off (`YARN_FACTOR=0`).
-- **LLM configuration (model, base URL, API key)**: the the retired client V1 web app
-  does **not** read `LLM_MODEL` / `LLM_BASE_URL` / `LLM_API_KEY` env vars. It
-  resolves the LLM and MCP servers from its own settings store (GUI:
-  `Settings → LLM` / `Settings → MCP`), persisted under `~/.the retired client`. Those env
-  vars are only honored by the V0/CLI path
-  (`LLM.load_from_env` + `--override-with-envs`), and the retired-server config
-  loader only parses `OH_*` prefixed vars (see `agent_server/config.py`
-  `ENVIRONMENT_VARIABLE_PREFIX`). So the LLM profile is set in the Canvas UI
-  (Settings → LLM) or via the V1 REST API — see the `retired-stack`
-  section of the README for the profile example. Rationale + verified API
-  surface: `MEMORIES.md`.
-- **MCP search servers**: web-search servers (e.g. Tavily, remote
-  streamable-http, API key) are registered in the retired client → Settings → MCP, or via
-  the V1 REST API (`POST /api/v1/settings` with
-  `agent_settings_diff.mcp_config`, which is applied wholesale — send the full
-  desired map). Keep any MCP API key out of git.
-- **the retired client runs in public mode by default.** `run.sh` execs
-  `retired-stack --host 0.0.0.0 --port 8020 --public`, so the UI answers on the
-  LAN / tailnet addresses too and the API key is not injected into the page —
-  every browser pastes `LOCAL_BACKEND_API_KEY` (generated into
-  `retired-stack/.env` by install.sh) once. That key is the only gate, and
-  agents run as your user on the local filesystem, so it is effectively a shell
-  credential; `run.sh` refuses to start without it. `CANVAS_PUBLIC=false`
-  restores loopback-only mode with the key auto-injected and no login. (An
-  earlier attempt at this used a custom `bind_guard.py` proxy — reverted, it
-  broke too much.)
-- **the retired client runtime = Python 3.14 + tmux.** The launcher runs retired-server
-  and the automation backend through `uv tool uvx` and pins only the
-  `the retired client-*` packages, so the interpreter floats to whatever `python3` is
-  newest on the machine. On 3.15 that environment fails to build, so `run.sh`
-  exports `UV_PYTHON=3.14` (and `install.sh` installs `python@3.14` via
-  Homebrew). `tmux` is what the SDK uses for agent terminals — without it every
-  conversation logs "tmux is not installed. Falling back to subprocess-based
-  terminal". Both are checked by `install.sh`/`run.sh`.
 
 ## Common commands
 
@@ -159,11 +120,8 @@ One serving stack, two client stacks, plus a notification sidecar:
 cd dgx_spark_host/qwen38-flash-next-fp4
 docker compose -f compose.yml up --build   # first run downloads ~96 GiB of weights
 
-# the retired client side (macOS, SSH tunnel first: ssh -N -L 8000:localhost:8000 USER@DGX_SPARK_IP)
-./retired-stack/install.sh   # one-time (upgrades on re-run)
-./retired-stack/run.sh       # UI: http://localhost:8020
-
-# or the OpenCode side (same tunnel; alternative client)
+# macOS side — the OpenCode client (SSH tunnel first:
+# ssh -N -L 8000:localhost:8000 USER@DGX_SPARK_IP)
 ./opencode_native/install.sh       # one-time (upgrades on re-run)
 ./opencode_native/run.sh /path/to/repo   # TUI
 ./opencode_native/run.sh server    # headless API + web UI: http://localhost:4096
@@ -174,9 +132,6 @@ Sanity checks that do not need a GPU:
 
 ```bash
 bash -n dgx_spark_host/qwen38-flash-next-fp4/entrypoint.sh
-bash -n retired-stack/install.sh
-bash -n retired-stack/run.sh
-python3 -m py_compile retired-stack/ntfy_notifier.py
 bash -n opencode_native/install.sh
 bash -n opencode_native/run.sh
 bash -n opencode_native/lib_stack.sh
@@ -192,16 +147,11 @@ python3 -m py_compile opencode_native/ntfy_notifier.py
   compose uses it for `${...}` interpolation (`HF_CACHE` and the other cache
   mounts) and passes it into the container via `env_file`, so `HF_TOKEN` and
   overrides of the `Dockerfile` `ENV` defaults reach `entrypoint.sh` (compose
-  defaults work without it). `retired-stack/example.env` is the native
-  Canvas stack's tracked template — `install.sh` copies it to `.env`;
-  `opencode_native/example.env` is the OpenCode stack's (same pattern, and
-  `install.sh` fills a random `OPENCODE_SERVER_PASSWORD` + `NTFY_TOPIC`).
-- `context/` holds exported the retired client conversation events and is git-ignored —
+  defaults work without it). `opencode_native/example.env` is the OpenCode
+  stack's tracked template — `install.sh` copies it to `.env` and fills a
+  random `OPENCODE_SERVER_PASSWORD` + `NTFY_TOPIC`.
+- `context/` holds exported agent conversation events and is git-ignored —
   never commit it.
-- `retired-stack/the retired client-state/` is the native stack's runtime state
-  (conversations, workspaces, terminal history, logs) and is git-ignored. The
-  LLM profile, session API key, and encryption key live in `~/.the retired client`
-  (also git-ignored / outside the repo).
 - `opencode_native/opencode-state/` is the OpenCode stack's runtime state
   (generated `config/opencode.json`, `config/opencode-dir/` for custom
   agents/commands/skills, XDG `data/`+`cache/`+`xdg-config/`, `logs/`, the

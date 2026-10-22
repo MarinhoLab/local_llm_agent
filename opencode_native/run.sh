@@ -18,7 +18,7 @@
 #   ./run.sh upgrade      upgrade the binary (re-runs install.sh).
 #
 # What this adds over calling opencode directly (the reason to always use it):
-#   1. sources retired-stack-style .env, with caller env vars winning;
+#   1. sources .env, with caller env vars winning;
 #   2. points OPENCODE_CONFIG at this folder's generated config, so the DGX
 #      profile exists (opencode has no UI to add a provider) ;
 #   3. isolates XDG config/data/cache inside opencode_native/opencode-state/
@@ -97,8 +97,8 @@ case "${VLLM_CHECK}" in
 esac
 
 # --- 4. ntfy notifications --------------------------------------------------
-# Same design as retired-stack: a stdlib-only daemon that polls the
-# retired-server and publishes on status transitions. For OpenCode the server is
+# A stdlib-only daemon that polls the opencode server and publishes on
+# status transitions. The server is
 # `opencode serve`, so notifications only make sense once the stack runs in
 # server mode (the TUI spawns its own private server on a random port).
 start_notifier() {
@@ -189,8 +189,7 @@ do_server() {
   local project_dir="$1"
   # The server runs agents that execute shell as you. Loopback by default;
   # without basic auth anything on the machine can drive it, so refuse to
-  # start with the placeholder (same policy as retired-stack/run.sh
-  # for its public-mode API key).
+  # start with the placeholder.
   if [[ -z "${OPENCODE_SERVER_PASSWORD:-}" || "${OPENCODE_SERVER_PASSWORD}" == "REPLACE_ME" ]]; then
     oc_die "server mode needs a real OPENCODE_SERVER_PASSWORD — it is currently
        '${OPENCODE_SERVER_PASSWORD:-<empty>}'. Generate one into .env:
@@ -208,7 +207,7 @@ do_server() {
     fi
     oc_die "port ${OPENCODE_SERVER_PORT} is already in use by something else.
   Choose another:  OPENCODE_SERVER_PORT=5000 ./opencode_native/run.sh server
-  (8000 = vLLM tunnel, 8020 = the retired client, 4096 = this stack's default.)"
+  (8000 = vLLM tunnel, 2020 = ntfy, 4096 = this stack's default.)"
   fi
   maybe_start_notifier
   echo "web UI      : http://localhost:${OPENCODE_SERVER_PORT}/"

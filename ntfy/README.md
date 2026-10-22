@@ -1,17 +1,17 @@
 # ntfy — per-PC self-hosted push server
 
-A small [ntfy](https://ntfy.sh) server for **this PC only**, so the Agent
-Canvas notifier (`retired-stack/ntfy_notifier.py`) can push
+A small [ntfy](https://ntfy.sh) server for **this PC only**, so the OpenCode
+notifier (`opencode_native/ntfy_notifier.py`) can push
 "your agent finished / errored / needs input" notifications to your phone.
 
-One of these runs on every PC that runs the retired client. Each instance is
+One of these runs on every PC that runs OpenCode. Each instance is
 independent: own data, own access token, own topic(s) — no cross-machine
 coordination. Phones subscribe to each PC's server over **Tailscale**.
 
 ```
  PC A (mac.tail)                     PC B (laptop.tail)
  ┌─────────────────────────┐         ┌─────────────────────────┐
- │ the retired client  :8020      │         │ the retired client  :8020      │
+ │ OpenCode      :4096      │         │ OpenCode      :4096      │
  │ ntfy server   :2020      │         │ ntfy server   :2020      │
  │ notifier → 127.0.0.1:2020│         │ notifier → 127.0.0.1:2020│
  └─────────────────────────┘         └─────────────────────────┘
@@ -36,7 +36,7 @@ docker compose up -d
 docker compose ps        # ntfy should be "healthy"
 ```
 
-The notifier (`retired-stack/`) and the phone both talk to the **same**
+The notifier (`opencode_native/ntfy_notifier.py`) and the phone both talk to the **same**
 `NTFY_PORT`; the notifier reaches it on `127.0.0.1`, the phone over Tailscale.
 
 > **`command: serve` is required.** The official image's `ENTRYPOINT` is bare
@@ -61,11 +61,11 @@ stronger model, do this:
 2. Create a user and an access token (verified commands):
    ```bash
    docker compose exec -e NTFY_PASSWORD=<choose-a-password> ntfy \
-     ntfy user add --role=admin retired-stack
-   docker compose exec ntfy ntfy token add retired-stack
+     ntfy user add --role=admin opencode
+   docker compose exec ntfy ntfy token add opencode
    # -> prints a token like  tk_...
    ```
-3. Put that token in `retired-stack/.env` as `NTFY_AUTH_TOKEN`.
+3. Put that token in `opencode_native/.env` as `NTFY_AUTH_TOKEN`.
 4. (Recommended) lock the server so anonymous access is denied:
    ```bash
    docker compose exec ntfy ntfy access --help   # see syntax
@@ -84,7 +84,7 @@ iOS: App Store), then subscribe to this PC's topic URL:
 http://<this-pc>.tail:2020/<NTFY_TOPIC>
 ```
 
-`<NTFY_TOPIC>` is the topic from `retired-stack/.env`
+`<NTFY_TOPIC>` is the topic from `opencode_native/.env`
 (`NTFY_TOPIC=`). Pick something unguessable — on a private server the topic
 name is part of the access control.
 
@@ -104,9 +104,10 @@ ntfy.sh's upstream rate limits with many PCs, run a shared ntfy.sh account /
 set `NTFY_UPSTREAM_ACCESS_TOKEN`.)
 
 **Deep links** — when you tap a notification, the app opens the URL in the
-`X-Click` header, i.e. `http://<this-pc>.tail:8020/conversations/<id>`. Your
-phone just needs to be on Tailscale (it is, by definition) and the Agent
-Canvas port 8020 reachable on that PC.
+`X-Click` header, i.e. the session page in the OpenCode web UI
+(`http://<this-pc>.tail:4096/server/<key>/session/<id>`). Your
+phone just needs to be on Tailscale (it is, by definition) and the OpenCode
+server port (4096 by default) reachable on that PC.
 
 ## Security notes
 

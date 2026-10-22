@@ -1,7 +1,7 @@
 # ntfy/compose.yml — per-PC, self-hosted ntfy push server (single container).
 #
-# One of these runs on every PC that runs the retired client. The the retired client
-# notifier (retired-stack/ntfy_notifier.py) publishes to it on
+# One of these runs on every PC that runs OpenCode. The OpenCode
+# notifier (opencode_native/ntfy_notifier.py) publishes to it on
 # 127.0.0.1:<NTFY_PORT>; your phone reaches it over Tailscale at
 # http://<this-pc>.tail:<NTFY_PORT>/<topic>.
 #
@@ -18,7 +18,7 @@
 #     uses for its public topics. Anyone who knows the topic can read/write
 #     it — so pick NTFY_TOPIC long and random. The server needs no topic
 #     configuration; install.sh generates a random topic in
-#     retired-stack/.env, and the phone subscribes to that same one.
+#     opencode_native/.env, and the phone subscribes to that same one.
 #   - Optional: set NTFY_AUTH_FILE below to enable account auth (users,
 #     ACLs, access tokens) for stronger protection. See ntfy/README.md
 #     "Optional: account auth".

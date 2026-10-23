@@ -9,8 +9,9 @@
 # Usage:
 #   oc.sh ping                         HTTP status of the server (200 = up + auth ok)
 #   oc.sh run <dir> <title> <prompt>   new session in <dir>; prints final reply
-#   oc.sh list                         sessions: id, title, directory
-#   oc.sh abort <session-id>           stop a running turn
+#   oc.sh list [dir]                   sessions of <dir> (default: the server's): id, title, directory
+#   oc.sh pending [dir]                permission prompts waiting for an answer in <dir>'s sessions
+#   oc.sh abort <session-id>           stop a running turn (does not clear its pending prompts)
 #   oc.sh delete <session-id>          delete a session
 #
 # The basic-auth password is read from opencode_native/.env and never printed.
@@ -58,10 +59,19 @@ d = json.load(sys.stdin)
 text = "\n".join(p.get("text", "") for p in d.get("parts", []) if p.get("type") == "text").strip()
 print(text or json.dumps(d)[:2000])'
     ;;
-  list)
-    api "${OC_URL}/session" \
-      | json 'import json,sys
+  list|pending)
+    # Sessions are filed per directory: without ?directory= the server lists only its own.
+    q=""
+    [[ -n "${1:-}" ]] && q="?directory=$(json 'import sys,urllib.parse;print(urllib.parse.quote(sys.argv[1]))' "$(cd "$1" && pwd)")"
+    if [[ "${cmd}" == list ]]; then
+      api "${OC_URL}/session${q}" \
+        | json 'import json,sys
 for s in json.load(sys.stdin): print(s["id"], "|", s.get("title",""), "|", s.get("directory",""))'
+    else
+      api "${OC_URL}/permission${q}" \
+        | json 'import json,sys
+for p in json.load(sys.stdin): print(p["sessionID"], "|", p["permission"], "|", " ".join(p.get("patterns", [])))'
+    fi
     ;;
   abort)
     api -X POST "${OC_URL}/session/${1:?session id}/abort"; echo
@@ -70,7 +80,7 @@ for s in json.load(sys.stdin): print(s["id"], "|", s.get("title",""), "|", s.get
     api -X DELETE "${OC_URL}/session/${1:?session id}"; echo
     ;;
   *)
-    sed -n '3,17p' "$0" >&2
+    sed -n '3,18p' "$0" >&2
     exit 2
     ;;
 esac

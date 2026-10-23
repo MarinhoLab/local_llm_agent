@@ -5,7 +5,9 @@ description: >-
   server's HTTP API: one opencode session per task, scoped to a directory,
   run in parallel and read back as text. Covers bringing the server up with
   the right auth and auto-approve settings, the bundled oc.sh driver, and the
-  pitfalls (hidden .env, 401s, approval prompts that stall unattended runs).
+  pitfalls (hidden .env, 401s, per-directory session listing, and
+  external_directory prompts that stall unattended runs even with
+  OPENCODE_AUTO=yes and look like hung shell calls).
 license: MIT
 compatibility: opencode_native stack (opencode serve on http://127.0.0.1:4096, provider dgx-vllm/qwen-local via the vLLM tunnel on :8000)
 triggers:
@@ -43,6 +45,15 @@ the working directory.
   blocks until someone answers it. `yes` means the model runs shell **as the
   user with no sandbox** — only enable it when the user agrees, and scope
   every session to the narrowest directory that does the job.
+- **`OPENCODE_AUTO=yes` does not cover files outside the session's
+  directory.** Any tool call that reads, writes or `cd`s outside `<dir>`
+  (`/tmp`, a helper script elsewhere, another checkout) raises an
+  `external_directory` prompt and the session waits on it indefinitely. Keep
+  everything a session needs inside `<dir>`, and tell it so in the brief
+  (e.g. "write scratch files under `<dir>`, never `/tmp`").
+- **Leave prompts to the user.** Answering a pending prompt widens what
+  the model may do; that is the user's decision (web UI), not the calling
+  agent's. Report the prompt and its patterns, and ask.
 
 ## 1. Bring the server up
 
@@ -106,15 +117,42 @@ caller's context. Name the files, the expected result, and the reply format
 (e.g. "reply with only the number"). Treat each reply as a report, not proof —
 check the diff or files it claims to have changed.
 
-Avoid two sessions editing the same files at once; nothing locks them.
+Avoid two sessions editing the same files at once; nothing locks them. For
+parallel work on one repository, give each session its own `git worktree`.
 
-## 3. Housekeeping
+If a build or test needs software the host lacks, say so in the brief and
+give the session a ready command (e.g. a Docker image plus a script **inside
+`<dir>`**) rather than letting it hunt for it; a local model will otherwise
+search the filesystem and the network at length.
+
+## 3. A session that seems hung
+
+A tool call shown as `running` for a long time with **no child process**
+under `opencode serve` is almost always a permission prompt, not a hang:
 
 ```bash
-"$SKILL_DIR/scripts/oc.sh" list            # id | title | directory
+"$SKILL_DIR/scripts/oc.sh" pending <dir>   # session | permission | patterns
+grep 'message=asking' opencode_native/opencode-state/data/opencode/log/opencode.log | tail
+pstree -p "$(pgrep -f 'opencode serve' | head -1)"   # threads only = no command running
+```
+
+- `external_directory` with a path pattern: the session touched a path
+  outside its directory. Ask the user to approve it in the web UI, or abort
+  and re-brief so the path is inside `<dir>`.
+- `abort` stops the turn but **does not clear** its pending prompts; they
+  stay listed until answered.
+
+## 4. Housekeeping
+
+```bash
+"$SKILL_DIR/scripts/oc.sh" list <dir>      # id | title | directory
 "$SKILL_DIR/scripts/oc.sh" abort <id>      # stop a runaway turn
 "$SKILL_DIR/scripts/oc.sh" delete <id>     # remove test/finished sessions
 ```
+
+Sessions (and prompts) are filed per directory: `list` and `pending` without
+`<dir>` only show the server's own directory, so pass the directory you gave
+`run`.
 
 The user can watch and steer any session live in the web UI at
 `http://localhost:4096` (same basic auth).
@@ -129,10 +167,15 @@ The driver uses only these endpoints (basic auth `opencode:<password>`):
 | `GET /config/providers` | providers/models the server knows |
 | `POST /session?directory=<dir>` body `{"title":…}` | create session → `id` |
 | `POST /session/<id>/message?directory=<dir>` body `{"model":{"providerID","modelID"},"parts":[{"type":"text","text":…}]}` | run one turn; returns the assistant message with `parts` |
-| `GET /session` | list sessions |
+| `GET /session?directory=<dir>` | list a directory's sessions |
+| `GET /session/status?directory=<dir>` | which of them are `busy` |
+| `GET /permission?directory=<dir>` | pending permission prompts |
 | `POST /session/<id>/abort` | abort the running turn |
 | `DELETE /session/<id>` | delete a session |
 
 Verified against opencode 1.19.4 (2026-10-23): two concurrent sessions, one
 using the shell tool and one reading a file, both completed without prompts
-under `OPENCODE_AUTO=yes`.
+under `OPENCODE_AUTO=yes`. In a real two-worktree run the same day, one
+session finished on its own, while the other stalled twice on
+`external_directory` prompts (a `curl` into `/tmp`, then reading a helper
+script under `/tmp`) that looked like hung shell calls.

@@ -26,9 +26,12 @@ One serving stack, one client stack, plus a notification sidecar:
   `opencode-state/config/opencode.json` — OpenCode has no provider UI, and the
   endpoint/key are `{env:...}`-substituted from `.env`, so launches must go
   through `run.sh` (which also does the XDG isolation). `run.sh` modes: `tui`
-  (default) / `server` / `attach` / `run` / `upgrade`; the headless server
+  (default) / `server` / `attach` / `run` / `mcp` / `upgrade`; the headless server
   listens on `http://localhost:4096` (loopback + basic auth, and `run.sh`
-  refuses to bind it without a password). All state — generated config,
+  refuses to bind it without a password). Web search comes from Tavily's hosted
+  MCP server, `{env:TAVILY_MCP_URL}`-substituted from `.env` (empty = `run.sh`
+  injects `enabled:false`; OpenCode's own `websearch` tool is unavailable on a
+  local provider). All state — generated config,
   sessions (`opencode.db`), snapshots, logs — lives inside `opencode-state/`,
   never `~/.config/opencode` or `~/.local/share/opencode`. Agents run as your
   user on the local filesystem, so `permission.edit`/`shell` default to `ask`

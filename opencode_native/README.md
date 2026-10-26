@@ -84,7 +84,45 @@ at launch, which is also why you always launch through `run.sh`. To customise
 `opencode-state/config/opencode.json`, or set `OPENCODE_CONFIG` in `.env` to
 your own file. `install.sh` never overwrites an edited copy.
 
-## Modes
+## Web search
+
+OpenCode's built-in `websearch` tool only exists on OpenCode's own hosted
+provider (or behind `OPENCODE_ENABLE_EXA` / `OPENCODE_ENABLE_PARALLEL`), so with
+a locally served model the route to the internet is an MCP server. The profile
+ships one, wired to Tavily's hosted endpoint:
+
+```jsonc
+"mcp": { "tavily": { "type": "remote", "url": "{env:TAVILY_MCP_URL}" } }
+```
+
+Put the URL you get from <https://app.tavily.com> into `TAVILY_MCP_URL` in
+`.env` and restart. The key is a query parameter *inside that URL*, so the line
+is a secret like `VLLM_API_KEY` — `.env` is git-ignored, and the config file
+only ever holds `{env:TAVILY_MCP_URL}`. `run.sh` then reports
+`web search : tavily (5 MCP tools)` and the agent gains:
+
+| tool | what it is for |
+| --- | --- |
+| `tavily_search` | web results (the actual "search") |
+| `tavily_extract` | clean text of specific pages |
+| `tavily_crawl` / `tavily_map` | follow / enumerate a whole site |
+| `tavily_research` | multi-step research report (slow, expensive) |
+
+With the variable empty `run.sh` injects `{"mcp":{"tavily":{"enabled":false}}}`
+via `OPENCODE_CONFIG_CONTENT`, so the server is registered but never dialed
+rather than failing on every start — unless you set `OPENCODE_CONFIG_CONTENT`
+yourself, in which case that variable is yours and the injection is skipped.
+
+Check what the agent will actually see (use `run.sh`, not `opencode` directly —
+only `run.sh` exports the URL and points at this profile):
+
+```bash
+./run.sh mcp list        # ✓ tavily connected   /   ○ tavily disabled
+```
+
+`webfetch` stays available either way: `tavily_search` to *find* a URL,
+`webfetch` to *read* one you already have.
+
 
 ```bash
 ./run.sh [dir]         # TUI (default) — mirrors `opencode [project]`
@@ -93,6 +131,7 @@ your own file. `install.sh` never overwrites an edited copy.
 ./run.sh web-off       # undo the tailnet publishing
 ./run.sh attach [dir]  # TUI connected to that server
 ./run.sh run "prompt"  # non-interactive one-shot (model from the profile)
+./run.sh mcp list      # MCP servers as this profile sees them (README → Web search)
 ./run.sh upgrade       # re-run install.sh
 ```
 

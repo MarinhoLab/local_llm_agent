@@ -58,6 +58,22 @@
     }
   },
 
+  // Web search, through Tavily's hosted MCP server. OpenCode's own `websearch`
+  // tool only exists on OpenCode's provider (or with OPENCODE_ENABLE_EXA /
+  // OPENCODE_ENABLE_PARALLEL), so on a locally served model this is the way to
+  // the internet: it adds tavily_search / _extract / _crawl / _map / _research.
+  // The URL carries the API key as a query parameter, so it lives in .env and
+  // is substituted at launch like the vLLM key above — nothing secret here.
+  // With TAVILY_MCP_URL empty, run.sh injects {"mcp":{"tavily":{"enabled":
+  // false}}} through OPENCODE_CONFIG_CONTENT, so an unconfigured stack does not
+  // fail the connection on every start. See README → Web search.
+  "mcp": {
+    "tavily": {
+      "type": "remote",
+      "url": "{env:TAVILY_MCP_URL}"
+    }
+  },
+
   // Agents run as you, with real filesystem access. Ask before editing files
   // or running shell commands. run.sh flips these to "allow" when
   // OPENCODE_AUTO=yes (through OPENCODE_PERMISSION), which is what

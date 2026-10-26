@@ -66,6 +66,7 @@ oc_load_env() {
   local _k _i=0
   local -a _keys=(
     VLLM_BASE_URL VLLM_API_KEY VLLM_MODEL_ID
+    TAVILY_MCP_URL
     OPENCODE_SERVER_PORT OPENCODE_BIND_HOST OPENCODE_SERVER_PASSWORD
     OPENCODE_SERVER_USERNAME OPENCODE_AUTO
     OPENCODE_STATE_DIR OPENCODE_CONFIG_FILE OPENCODE_CONFIG_DIR
@@ -134,6 +135,16 @@ oc_export_env() {
   export OPENCODE_CONFIG="${OPENCODE_CONFIG_FILE}"
   export OPENCODE_DGX_BASE_URL="${VLLM_BASE_URL}"
   export OPENCODE_DGX_API_KEY="${VLLM_API_KEY}"
+
+  # Web search (README → Web search). The config always declares the Tavily MCP
+  # server, so an unconfigured stack needs telling: {env:TAVILY_MCP_URL} would
+  # substitute to an empty string and opencode would report a failed server on
+  # every start. Skipped when the caller brings their own OPENCODE_CONFIG_CONTENT
+  # — that variable is theirs to own, and merging two JSON documents is not worth
+  # the complexity.
+  if [[ -z "${TAVILY_MCP_URL:-}" && -z "${OPENCODE_CONFIG_CONTENT:-}" ]]; then
+    export OPENCODE_CONFIG_CONTENT='{"mcp":{"tavily":{"enabled":false}}}'
+  fi
 
   # Isolate config/data/cache per stack instead of ~/.config and ~/.local/share.
   export XDG_CONFIG_HOME="${OPENCODE_XDG_CONFIG}"

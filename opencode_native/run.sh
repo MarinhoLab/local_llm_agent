@@ -15,6 +15,9 @@
 #   ./run.sh run ARGS...  non-interactive; the model is taken from the profile,
 #                         so `./run.sh run "prompt"` needs no -m. Use
 #                         `./run.sh run -m provider/model ...` to override.
+#   ./run.sh mcp ARGS...  `opencode mcp list|add|...` with the stack's
+#                         environment (check the Tavily server; README → Web
+#                         search).
 #   ./run.sh upgrade      upgrade the binary (re-runs install.sh).
 #
 # What this adds over calling opencode directly (the reason to always use it):
@@ -36,12 +39,12 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "${SCRIPT_DIR}/lib_stack.sh"
 
 usage() {
-  sed -n '3,18p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'
+  sed -n '3,21p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'
 }
 
 MODE="${1:-tui}"
 case "${MODE}" in
-  tui | server | web | web-off | attach | run | upgrade | -h | --help) : ;;
+  tui | server | web | web-off | attach | run | mcp | upgrade | -h | --help) : ;;
   *) MODE="tui" ;;  # first arg is a project dir
 esac
 if [[ "${MODE}" != "tui" ]]; then
@@ -286,6 +289,7 @@ echo "config                : ${OPENCODE_CONFIG_FILE}"
 echo "state dir             : ${OPENCODE_STATE_DIR}"
 echo "model                 : dgx-vllm/${VLLM_MODEL_ID} -> ${VLLM_BASE_URL}"
 echo "permissions           : $([[ "${OPENCODE_AUTO}" == "yes" ]] && echo "auto-approved (OPENCODE_AUTO=yes)" || echo "ask before edit/shell")"
+echo "web search            : $([[ -n "${TAVILY_MCP_URL:-}" ]] && echo "tavily (5 MCP tools)" || echo "off (set TAVILY_MCP_URL in .env)")"
 # Set by oc_export_env only when the directory exists.
 if [[ -n "${OPENCODE_CONFIG_DIR:-}" ]]; then
   echo "config dir            : ${OPENCODE_CONFIG_DIR} (agents/ commands/ skills/ plugins/)"
@@ -342,6 +346,13 @@ case "${MODE}" in
       exec "${OPENCODE_BIN}" run "${AUTO_ARGS[@]}" "$@"
     fi
     exec "${OPENCODE_BIN}" run "$@"
+    ;;
+
+  mcp)
+    # Passthrough so the MCP status reflects this stack's environment (the
+    # {env:TAVILY_MCP_URL} substitution and OPENCODE_CONFIG only exist here);
+    # calling `opencode mcp list` directly reads the global config instead.
+    exec "${OPENCODE_BIN}" mcp "$@"
     ;;
 
   *)

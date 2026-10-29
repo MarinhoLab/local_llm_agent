@@ -48,6 +48,11 @@
           "name": "Qwen3.8 on DGX Spark (qwen-local)",
           "reasoning": true,
           "tool_call": true,
+          // Qwen3.8 is a native VLM and the stack serves the vision tower
+          // (see the "Image inputs enabled" bullet in ../AGENTS.md), but
+          // models.dev has no entry for a private vLLM alias, so without this
+          // OpenCode treats the model as text-only and refuses images.
+          "modalities": { "input": ["text", "image"], "output": ["text"] },
           // OpenCode tracks the remaining window from these; models.dev has no
           // entry for a private vLLM alias. 262144 is the checkpoint's native
           // max (see the Context bullet in ../AGENTS.md); the 16384 output cap

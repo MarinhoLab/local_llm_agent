@@ -24,3 +24,5 @@ artifacts/logs/
 
 # Retired Docker-based client stack (removed 2026-09); ignore any leftover
 # working-tree copies
+agent_canvas/
+retired-stack/

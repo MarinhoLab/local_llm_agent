@@ -26,3 +26,4 @@ artifacts/logs/
 # working-tree copies
 agent_canvas/
 retired-stack/
+.agents/skills/force-control-adaptation-benchmarks/

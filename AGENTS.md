@@ -173,5 +173,12 @@ python3 -m py_compile opencode_native/ntfy_notifier.py
   turning one file into a shared one with presets.
   Keep the stack's README env-var table in sync when its defaults change, and
   keep the top-level README/AGENTS.md stack tables accurate.
-- Config changes should stay overridable via environment variables — no
-  hard-coded per-machine values.
+ - Config changes should stay overridable via environment variables — no
+   hard-coded per-machine values.
+ - **Commit messages carry no AI attribution.** No `Co-authored-by:` /
+   `Generated with` trailers naming a model, agent or tool, and no
+   author/committer overrides — commit as the human. The published history was
+   rewritten to drop exactly those trailers, so re-adding them means rewriting
+   the history again. Crediting the model in prose (a README "assisted
+   development" note, a doc paragraph) is fine; a trailer that git tooling
+   turns into an author is not.
